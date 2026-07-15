@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains **Phase 1: project foundation**. It intentionally does not yet contain document ingestion or framework integrations.
+The current repository contains the project foundation and **Phase 2 shared contracts**. It intentionally does not yet contain document ingestion or framework integrations.
 
 ## Foundation features
 
@@ -14,6 +14,9 @@ The current repository contains **Phase 1: project foundation**. It intentionall
 - Separate liveness and dependency-aware readiness endpoints
 - PostgreSQL, Qdrant, and Redis development services
 - GitHub Actions quality pipeline
+- Framework-independent models for documents, chunks, embeddings, retrieval, citations, evaluation, latency, and usage
+- Async protocols for parsers, chunkers, providers, retrievers, rerankers, pipelines, and evaluation metrics
+- A shared pipeline contract test that future implementations must pass
 
 ## Quick start
 
@@ -74,15 +77,27 @@ FastAPI ── request ID + structured logging
                         └── Redis
 ```
 
-Application code is split between the deployable API in `apps/api` and reusable, framework-independent code in `src/raglab`. Later RAG implementations will depend on shared contracts rather than each other.
+Application code is split between the deployable API in `apps/api` and reusable, framework-independent code in `src/raglab`. RAG implementations depend on the models in `raglab.core.schemas` and protocols in `raglab.core.interfaces`, rather than importing types from another framework adapter.
+
+The shared `RAGPipeline` boundary is intentionally small:
+
+```python
+class RAGPipeline(Protocol):
+    async def ingest(
+        self, documents: Sequence[DocumentInput]
+    ) -> Sequence[IngestionResult]: ...
+
+    async def query(self, request: QueryRequest) -> RAGResponse: ...
+```
+
+Every response carries a normalized framework name, evidence status, citations, retrieved chunks, stage latency, provider usage, warnings, and optional debug data. This supports fair evaluation without forcing each framework to use the same internal architecture.
 
 ## Roadmap
 
-1. Shared RAG schemas and provider interfaces
-2. PDF ingestion and configurable chunking
-3. Framework-free hybrid RAG baseline
-4. LangChain, LangGraph, LlamaIndex, and Haystack adapters
-5. Evaluation harness and reproducible benchmark reports
-6. Next.js inspection and evaluation UI
+1. PDF ingestion and configurable chunking
+2. Framework-free hybrid RAG baseline
+3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
+4. Evaluation harness and reproducible benchmark reports
+5. Next.js inspection and evaluation UI
 
 Benchmark tables will be added only after the evaluation dataset and pipelines have been run. No performance claims are made at this stage.
