@@ -9,6 +9,10 @@ class DocumentValidationError(RAGLabError):
     """An uploaded document failed validation."""
 
 
+class DocumentParsingError(RAGLabError):
+    """A validated document could not be parsed safely."""
+
+
 class DuplicateDocumentError(RAGLabError):
     """A document with the same content hash already exists."""
 

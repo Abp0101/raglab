@@ -78,12 +78,19 @@ class TextSpan(RAGLabModel):
         return self
 
 
+class SectionHeading(RAGLabModel):
+    """Detected section heading and its offset in normalized page text."""
+
+    text: str = Field(min_length=1, max_length=500)
+    start: int = Field(ge=0)
+
+
 class DocumentPage(RAGLabModel):
     """Normalized text extracted from one source page."""
 
     page_number: int = Field(ge=1)
     text: str = Field(min_length=1)
-    section_headings: tuple[str, ...] = ()
+    section_headings: tuple[SectionHeading, ...] = ()
 
 
 class ParsedDocument(RAGLabModel):

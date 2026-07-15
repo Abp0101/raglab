@@ -12,6 +12,7 @@ from raglab.core.schemas.documents import (
     Embedding,
     IngestionResult,
     ParsedDocument,
+    SectionHeading,
     TextSpan,
 )
 from raglab.core.schemas.evaluation import (
@@ -71,6 +72,7 @@ __all__ = [
     "RetrievalMode",
     "RetrievalRequest",
     "RetrievedChunk",
+    "SectionHeading",
     "TextSpan",
     "UsageMetrics",
 ]

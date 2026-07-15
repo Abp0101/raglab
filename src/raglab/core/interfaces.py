@@ -2,10 +2,12 @@
 
 from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
+from uuid import UUID
 
 from raglab.core.schemas import (
     Chunk,
     ChunkingConfig,
+    Document,
     DocumentInput,
     Embedding,
     EvaluationMetricResult,
@@ -27,6 +29,9 @@ from raglab.core.schemas import (
 class DocumentParser(Protocol):
     """Convert untrusted source bytes into normalized, page-aware text."""
 
+    @property
+    def name(self) -> str: ...
+
     async def parse(self, document: DocumentInput) -> ParsedDocument: ...
 
 
@@ -34,7 +39,33 @@ class DocumentParser(Protocol):
 class Chunker(Protocol):
     """Split parsed pages while retaining source provenance."""
 
+    @property
+    def name(self) -> str: ...
+
     def chunk(self, document: ParsedDocument, config: ChunkingConfig) -> Sequence[Chunk]: ...
+
+
+@runtime_checkable
+class DocumentRepository(Protocol):
+    """Persist source records and chunks, and enforce collection-level deduplication."""
+
+    async def find_by_hash(self, collection_id: UUID, content_hash: str) -> Document | None: ...
+
+    async def save(self, document: Document, chunks: Sequence[Chunk]) -> None: ...
+
+
+@runtime_checkable
+class VectorIndexer(Protocol):
+    """Store dense chunk vectors and retrieval metadata."""
+
+    async def upsert(self, chunks: Sequence[Chunk], embeddings: Sequence[Embedding]) -> None: ...
+
+
+@runtime_checkable
+class SparseIndexer(Protocol):
+    """Store chunks in a lexical index such as BM25."""
+
+    async def upsert(self, chunks: Sequence[Chunk]) -> None: ...
 
 
 @runtime_checkable

@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
     log_json: bool = True
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
+    max_upload_size_mb: int = Field(default=25, ge=1, le=250)
+    max_pdf_pages: int = Field(default=500, ge=1, le=5000)
 
     postgres_dsn: str = "postgresql+asyncpg://raglab:raglab@localhost:5432/raglab"
     qdrant_url: AnyHttpUrl = AnyHttpUrl("http://localhost:6333")
