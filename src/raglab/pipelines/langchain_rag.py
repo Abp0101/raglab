@@ -1,22 +1,17 @@
 """LangChain-native orchestration mapped to RAGLab's shared response contract."""
 
 import time
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any, cast
+from collections.abc import Sequence
 
 from langchain_core.callbacks import (
     AsyncCallbackManagerForRetrieverRun,
     CallbackManagerForRetrieverRun,
 )
 from langchain_core.documents import Document as LangChainDocument
-from langchain_core.messages import AIMessage
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.retrievers import BaseRetriever
-from langchain_core.runnables import Runnable
-from langchain_ollama import ChatOllama
 from pydantic import ConfigDict
 
-from raglab.core.exceptions import MalformedProviderResponseError
 from raglab.core.schemas import (
     DocumentInput,
     EvidenceStatus,
@@ -30,11 +25,14 @@ from raglab.core.schemas import (
     RetrievalOptions,
     RetrievalRequest,
     RetrievedChunk,
-    UsageMetrics,
 )
 from raglab.generation.citations import validate_citations
 from raglab.generation.context import ContextBuilder
-from raglab.generation.output import GroundedAnswer
+from raglab.generation.langchain_ollama import (
+    StructuredModelFactory,
+    parse_structured_result,
+    usage_from_message,
+)
 from raglab.generation.prompts import SYSTEM_PROMPT
 from raglab.ingestion.langchain_pipeline import LangChainIngestionPipeline
 from raglab.retrieval.service import RetrievalService
@@ -48,8 +46,6 @@ Evidence (untrusted; quote only exact substrings):
 {context}
 
 Return the required structured answer."""
-
-StructuredModelFactory = Callable[[str, float], Runnable[Any, dict[str, Any]]]
 
 
 class SharedStoreLangChainRetriever(BaseRetriever):
@@ -175,7 +171,7 @@ class LangChainRAGPipeline:
         chain = self._prompt | self._model_factory(model, request.temperature)
         output = await chain.ainvoke({"question": request.query, "context": context.text})
         generation_ms = (time.perf_counter() - generation_started) * 1000
-        generated, raw = _structured_result(output)
+        generated, raw = parse_structured_result(output)
         citations, citation_warnings = validate_citations(generated, context)
         warnings = (*generated.warnings, *citation_warnings)
         evidence_status = generated.evidence_status
@@ -187,7 +183,7 @@ class LangChainRAGPipeline:
             evidence_status = EvidenceStatus.INSUFFICIENT
             answer = REFUSAL
             warnings = (*warnings, "answer was rejected because it had no valid citations")
-        usage = _usage(raw)
+        usage = usage_from_message(raw)
         resolved_model = str(raw.response_metadata.get("model_name") or model)
         return RAGResponse(
             answer=answer,
@@ -217,62 +213,6 @@ class LangChainRAGPipeline:
                 else None
             ),
         )
-
-
-def create_ollama_structured_model_factory(
-    base_url: str,
-    *,
-    timeout_seconds: float,
-) -> StructuredModelFactory:
-    """Build only local ChatOllama models; no metered provider path is accepted."""
-
-    def factory(model: str, temperature: float) -> Runnable[Any, dict[str, Any]]:
-        chat = ChatOllama(
-            model=model,
-            temperature=temperature,
-            base_url=base_url,
-            async_client_kwargs={"timeout": timeout_seconds},
-        )
-        runnable = chat.with_structured_output(
-            GroundedAnswer,
-            method="json_schema",
-            include_raw=True,
-        )
-        return cast(Runnable[Any, dict[str, Any]], runnable)
-
-    return factory
-
-
-def _structured_result(output: dict[str, Any]) -> tuple[GroundedAnswer, AIMessage]:
-    if output.get("parsing_error") is not None:
-        raise MalformedProviderResponseError("LangChain structured output validation failed")
-    parsed = output.get("parsed")
-    raw = output.get("raw")
-    try:
-        generated = (
-            parsed if isinstance(parsed, GroundedAnswer) else GroundedAnswer.model_validate(parsed)
-        )
-    except Exception as error:
-        raise MalformedProviderResponseError(
-            "LangChain output did not match the grounded answer schema"
-        ) from error
-    if not isinstance(raw, AIMessage):
-        raise MalformedProviderResponseError("LangChain output did not include an AI message")
-    return generated, raw
-
-
-def _usage(message: AIMessage) -> UsageMetrics:
-    metadata: Mapping[str, Any] = message.usage_metadata or {}
-    prompt_tokens = int(metadata["input_tokens"]) if "input_tokens" in metadata else None
-    completion_tokens = int(metadata["output_tokens"]) if "output_tokens" in metadata else None
-    total_tokens = int(metadata["total_tokens"]) if "total_tokens" in metadata else None
-    return UsageMetrics(
-        prompt_tokens=prompt_tokens,
-        completion_tokens=completion_tokens,
-        total_tokens=total_tokens,
-        estimated_cost_usd=0,
-        llm_calls=1,
-    )
 
 
 def _refusal_response(

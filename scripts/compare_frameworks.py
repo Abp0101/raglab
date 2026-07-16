@@ -17,7 +17,11 @@ from raglab.core.schemas import (
 )
 from raglab.evaluation import EvaluationRunner, build_report, load_dataset
 
-FRAMEWORKS = (FrameworkName.CUSTOM, FrameworkName.LANGCHAIN)
+FRAMEWORKS = (
+    FrameworkName.CUSTOM,
+    FrameworkName.LANGCHAIN,
+    FrameworkName.LANGGRAPH,
+)
 
 
 async def main() -> None:
@@ -91,10 +95,17 @@ def _assert_valid_local_run(report: EvaluationReport) -> None:
 
 
 def _markdown(comparison_id: object, reports: list[EvaluationReport]) -> str:
-    metric_names = sorted({aggregate.name for report in reports for aggregate in report.aggregates})
-    aggregate_maps = [
-        {aggregate.name: aggregate.mean for aggregate in report.aggregates} for report in reports
-    ]
+    metric_names = sorted(
+        {aggregate.name for report in reports for aggregate in report.aggregates} | {"llm_calls"}
+    )
+    aggregate_maps = {
+        report.run.config.framework: {
+            **{aggregate.name: aggregate.mean for aggregate in report.aggregates},
+            "llm_calls": _mean_llm_calls(report),
+        }
+        for report in reports
+    }
+    frameworks = [report.run.config.framework for report in reports]
     lines = [
         "# Controlled framework comparison",
         "",
@@ -108,24 +119,36 @@ def _markdown(comparison_id: object, reports: list[EvaluationReport]) -> str:
         f"- Reranking: `{str(reports[0].run.config.rerank).lower()}`",
         "- Paid API cost: `$0.00`",
         "",
-        "| Metric | Custom | LangChain |",
-        "| --- | ---: | ---: |",
+        "| Metric | " + " | ".join(framework.value for framework in frameworks) + " |",
+        "| --- | " + " | ".join("---:" for _ in frameworks) + " |",
     ]
     lines.extend(
-        f"| {name} | {aggregate_maps[0].get(name, 0):.4f} | {aggregate_maps[1].get(name, 0):.4f} |"
+        f"| {name} | "
+        + " | ".join(f"{aggregate_maps[framework].get(name, 0):.4f}" for framework in frameworks)
+        + " |"
         for name in metric_names
     )
     lines.extend(
         [
             "",
-            "Both implementations use the same PostgreSQL/Qdrant/Redis corpus, local embedding "
+            "All implementations use the same PostgreSQL/Qdrant/Redis corpus, local embedding "
             "model, hybrid retrieval service, reranker, grounding schema, citation validator, "
-            "question order, and Ollama model. The changing variable is orchestration and the "
-            "model adapter (direct native Ollama HTTP versus LangChain ChatOllama).",
+            "question order, and Ollama model. The changing variables are orchestration and the "
+            "model adapter. LangGraph additionally permits one bounded "
+            "citation-repair transition when validation fails.",
             "",
         ]
     )
     return "\n".join(lines)
+
+
+def _mean_llm_calls(report: EvaluationReport) -> float:
+    calls = [
+        result.response.usage.llm_calls
+        for result in report.run.results
+        if result.response is not None
+    ]
+    return sum(calls) / len(calls) if calls else 0
 
 
 if __name__ == "__main__":

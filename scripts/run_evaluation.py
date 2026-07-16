@@ -16,7 +16,11 @@ async def main() -> None:
     parser.add_argument("--model", required=True, help="Already installed local Ollama model")
     parser.add_argument(
         "--framework",
-        choices=[FrameworkName.CUSTOM.value, FrameworkName.LANGCHAIN.value],
+        choices=[
+            FrameworkName.CUSTOM.value,
+            FrameworkName.LANGCHAIN.value,
+            FrameworkName.LANGGRAPH.value,
+        ],
         default=FrameworkName.CUSTOM.value,
     )
     parser.add_argument("--dataset", type=Path, default=Path("datasets/evaluation/v1"))

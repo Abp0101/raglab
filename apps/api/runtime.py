@@ -19,13 +19,18 @@ from raglab.database import (
     create_session_factory,
 )
 from raglab.embeddings import SentenceTransformerEmbeddingProvider
+from raglab.generation.langchain_ollama import create_ollama_structured_model_factory
 from raglab.generation.providers import create_llm_provider
 from raglab.ingestion import BackgroundIngestionManager, LangChainIngestionPipeline
 from raglab.ingestion.parsers import PyMuPDFParser
 from raglab.ingestion.pipeline import DocumentIngestionPipeline
 from raglab.ingestion.validation import PdfUploadValidator
-from raglab.pipelines import CustomRAGPipeline, LangChainRAGPipeline, PipelineRegistry
-from raglab.pipelines.langchain_rag import create_ollama_structured_model_factory
+from raglab.pipelines import (
+    CustomRAGPipeline,
+    LangChainRAGPipeline,
+    LangGraphRAGPipeline,
+    PipelineRegistry,
+)
 from raglab.reranking import CrossEncoderReranker
 from raglab.retrieval import RetrievalService
 from raglab.retrieval.parent_expansion import ParentChildContextExpander
@@ -98,6 +103,10 @@ def build_api_services(settings: Settings) -> ApiServices:
         llm=create_llm_provider(settings),
         default_model=settings.llm_model,
     )
+    structured_model_factory = create_ollama_structured_model_factory(
+        str(settings.ollama_base_url),
+        timeout_seconds=settings.llm_timeout_seconds,
+    )
     langchain = LangChainRAGPipeline(
         ingestion=LangChainIngestionPipeline(
             validator=validator,
@@ -108,10 +117,13 @@ def build_api_services(settings: Settings) -> ApiServices:
             sparse_indexer=sparse_index,
         ),
         retrieval=retrieval,
-        model_factory=create_ollama_structured_model_factory(
-            str(settings.ollama_base_url),
-            timeout_seconds=settings.llm_timeout_seconds,
-        ),
+        model_factory=structured_model_factory,
+        default_model=settings.llm_model,
+    )
+    langgraph = LangGraphRAGPipeline(
+        ingestion=ingestion,
+        retrieval=retrieval,
+        model_factory=structured_model_factory,
         default_model=settings.llm_model,
     )
     return ApiServices(
@@ -120,6 +132,7 @@ def build_api_services(settings: Settings) -> ApiServices:
             {
                 FrameworkName.CUSTOM: custom,
                 FrameworkName.LANGCHAIN: langchain,
+                FrameworkName.LANGGRAPH: langgraph,
             }
         ),
         ingestion_jobs=BackgroundIngestionManager(
