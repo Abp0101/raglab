@@ -10,6 +10,7 @@ from raglab.core.schemas import (
     ChunkingConfig,
     Document,
     DocumentInput,
+    DocumentStatus,
     Embedding,
 )
 from raglab.ingestion.parsers import PyMuPDFParser
@@ -54,6 +55,8 @@ class FakeDocumentRepository:
     def __init__(self, duplicate: Document | None = None) -> None:
         self.duplicate = duplicate
         self.saved: tuple[Document, Sequence[Chunk]] | None = None
+        self.status: DocumentStatus | None = None
+        self.deleted = False
 
     async def find_by_hash(self, collection_id: UUID, content_hash: str) -> Document | None:
         return self.duplicate
@@ -61,22 +64,39 @@ class FakeDocumentRepository:
     async def save(self, document: Document, chunks: Sequence[Chunk]) -> None:
         self.saved = (document, chunks)
 
+    async def set_status(self, document_id: UUID, status: DocumentStatus) -> None:
+        self.status = status
+
+    async def delete(self, document_id: UUID) -> None:
+        self.deleted = True
+
 
 class FakeVectorIndexer:
-    def __init__(self) -> None:
+    def __init__(self, *, fail: bool = False) -> None:
         self.upserted = 0
+        self.deleted = 0
+        self.fail = fail
 
     async def upsert(self, chunks: Sequence[Chunk], embeddings: Sequence[Embedding]) -> None:
         assert len(chunks) == len(embeddings)
         self.upserted = len(chunks)
+        if self.fail:
+            raise RuntimeError("vector indexing failed")
+
+    async def delete(self, chunk_ids: Sequence[UUID]) -> None:
+        self.deleted = len(chunk_ids)
 
 
 class FakeSparseIndexer:
     def __init__(self) -> None:
         self.upserted = 0
+        self.deleted = 0
 
     async def upsert(self, chunks: Sequence[Chunk]) -> None:
         self.upserted = len(chunks)
+
+    async def delete(self, chunks: Sequence[Chunk]) -> None:
+        self.deleted = len(chunks)
 
 
 def build_pipeline(
@@ -117,7 +137,8 @@ async def test_pipeline_runs_each_ingestion_stage() -> None:
     assert vectors.upserted == result.chunk_count
     assert sparse.upserted == result.chunk_count
     assert repository.saved is not None
-    assert repository.saved[0].status.value == "ready"
+    assert repository.saved[0].status is DocumentStatus.PROCESSING
+    assert repository.status is DocumentStatus.READY
 
 
 @pytest.mark.asyncio
@@ -143,3 +164,21 @@ async def test_pipeline_skips_processing_for_duplicate_content() -> None:
     assert vectors.upserted == 0
     assert sparse.upserted == 0
     assert repository.saved is None
+
+
+@pytest.mark.asyncio
+async def test_pipeline_compensates_when_indexing_fails() -> None:
+    repository = FakeDocumentRepository()
+    embeddings = FakeEmbeddingProvider()
+    vectors = FakeVectorIndexer(fail=True)
+    sparse = FakeSparseIndexer()
+    pipeline = build_pipeline(repository, embeddings, vectors, sparse)
+
+    with pytest.raises(RuntimeError, match="vector indexing failed"):
+        await pipeline.ingest(
+            DocumentInput(file_name="imu.pdf", content=make_pdf(), collection_id=uuid4())
+        )
+
+    assert repository.deleted is True
+    assert vectors.deleted > 0
+    assert sparse.deleted > 0

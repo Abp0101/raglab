@@ -21,6 +21,9 @@ The current repository contains the project foundation, shared contracts, and th
 - Page-preserving extraction, text normalization, PDF metadata, section headings, and content hashes
 - Deterministic recursive character chunks with overlap, source offsets, and metadata propagation
 - Injection-ready ingestion orchestration for duplicate checks, embeddings, dense indexing, sparse indexing, and persistence
+- PostgreSQL document/chunk persistence with collection-scoped duplicate constraints and Alembic migrations
+- Lazy local Sentence Transformers embeddings, a shared Qdrant vector collection, and Redis-backed BM25 tokens
+- Compensating cleanup when multi-store indexing fails, plus marked real-service integration tests
 
 ## Quick start
 
@@ -48,6 +51,8 @@ make format       # format and apply safe lint fixes
 make lint         # verify formatting and lint rules
 make typecheck    # run strict mypy checks
 make test         # run tests with branch coverage
+make test-integration # test PostgreSQL, Qdrant, and Redis adapters
+make test-live-model  # download/load and verify the default embedding model
 make check        # run all local quality gates
 make infra-down   # stop local backing services
 alembic upgrade head  # apply database migrations
@@ -65,6 +70,10 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 | `RAGLAB_CORS_ORIGINS` | JSON array of allowed web origins | `["http://localhost:3000"]` |
 | `RAGLAB_MAX_UPLOAD_SIZE_MB` | Maximum accepted PDF size | `25` |
 | `RAGLAB_MAX_PDF_PAGES` | Maximum pages processed per PDF | `500` |
+| `RAGLAB_EMBEDDING_MODEL` | Local Sentence Transformers model | `sentence-transformers/all-MiniLM-L6-v2` |
+| `RAGLAB_EMBEDDING_BATCH_SIZE` | Local embedding batch size | `32` |
+| `RAGLAB_QDRANT_COLLECTION` | Shared dense-vector collection | `raglab_chunks` |
+| `RAGLAB_BM25_KEY_PREFIX` | Redis namespace for sparse tokens | `raglab:bm25` |
 | `RAGLAB_POSTGRES_DSN` | Async SQLAlchemy connection URL | Local Compose PostgreSQL |
 | `RAGLAB_QDRANT_URL` | Qdrant HTTP endpoint | `http://localhost:6333` |
 | `RAGLAB_QDRANT_API_KEY` | Optional Qdrant credential | Empty |
@@ -73,14 +82,15 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 ## Current architecture
 
 ```text
-HTTP client
-    │
-    ▼
-FastAPI ── request ID + structured logging
-    │
-    └── /health/ready ──┬── PostgreSQL
-                        ├── Qdrant
-                        └── Redis
+PDF bytes ── validation ── PyMuPDF ── recursive chunks ── local embeddings
+                                              │                  │
+                                              ▼                  ▼
+                                         PostgreSQL           Qdrant
+                                              │
+                                              └── tokenization ── Redis/BM25
+
+HTTP client ── FastAPI ── request ID + structured logging
+                         └── /health/ready checks all three stores
 ```
 
 Application code is split between the deployable API in `apps/api` and reusable, framework-independent code in `src/raglab`. RAG implementations depend on the models in `raglab.core.schemas` and protocols in `raglab.core.interfaces`, rather than importing types from another framework adapter.
@@ -106,15 +116,16 @@ PDF metadata and page numbers are retained. Section headings are detected conser
 
 Extracted document text remains untrusted data. Future generation prompts must delimit it as evidence and explicitly prohibit following instructions found inside a document; parsing and file validation alone cannot prevent prompt injection.
 
-Storage remains dependency-injected: concrete PostgreSQL, Qdrant, local embedding, and BM25 adapters are the next ingestion milestone. Tests use in-memory contract fakes, not hidden production substitutes.
+Storage remains dependency-injected. PostgreSQL is the metadata and chunk source of truth, Qdrant stores normalized dense vectors and filterable payloads, and Redis persists tokenized chunks for BM25 scoring. A shared Qdrant collection is partitioned logically by `collection_id`, avoiding one physical collection per user collection. Ingestion first records `processing` state, then indexes dense and sparse data, marks the document `ready`, and performs best-effort compensation across stores when indexing fails.
+
+Normal tests use contract fakes and Qdrant local mode. `make test-integration` requires the Compose services and validates all three real backing stores. `make test-live-model` may download the configured Hugging Face model on first use.
 
 ## Roadmap
 
-1. PostgreSQL, Qdrant, local embedding, and BM25 ingestion adapters
-2. Complete configurable chunking strategy suite and benchmark
-3. Framework-free hybrid RAG baseline
-4. LangChain, LangGraph, LlamaIndex, and Haystack adapters
-5. Evaluation harness and reproducible benchmark reports
-6. Next.js inspection and evaluation UI
+1. Complete configurable chunking strategy suite and benchmark
+2. Framework-free hybrid RAG baseline
+3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
+4. Evaluation harness and reproducible benchmark reports
+5. Next.js inspection and evaluation UI
 
 Benchmark tables will be added only after the evaluation dataset and pipelines have been run. No performance claims are made at this stage.

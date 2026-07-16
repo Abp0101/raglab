@@ -18,6 +18,7 @@ dependencies = [
   "pymupdf>=1.25,<2.0",
   "qdrant-client>=1.13,<2.0",
   "redis>=5.2,<7.0",
+  "sentence-transformers>=3.4,<6.0",
   "sqlalchemy[asyncio]>=2.0.36,<3.0",
   "uvicorn[standard]>=0.34,<1.0",
 ]
@@ -55,13 +56,17 @@ mypy_path = ["src", "."]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["qdrant_client.*"]
+module = ["qdrant_client.*", "sentence_transformers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-addopts = "--strict-config --strict-markers -ra"
+addopts = "--strict-config --strict-markers -ra -m 'not integration and not live_model'"
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = [
+  "integration: requires Docker-backed PostgreSQL, Qdrant, and Redis services",
+  "live_model: downloads or loads a real embedding model",
+]
 
 [tool.coverage.run]
 branch = true

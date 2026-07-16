@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model check run infra-up infra-down
 
 PYTHON ?= python3.12
 VENV := .venv
@@ -22,6 +22,12 @@ typecheck:
 
 test:
 	$(BIN)/pytest --cov --cov-report=term-missing
+
+test-integration:
+	$(BIN)/pytest -m integration
+
+test-live-model:
+	$(BIN)/pytest -m live_model
 
 check: lint typecheck test
 

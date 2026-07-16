@@ -24,6 +24,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     max_upload_size_mb: int = Field(default=25, ge=1, le=250)
     max_pdf_pages: int = Field(default=500, ge=1, le=5000)
+    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_batch_size: int = Field(default=32, ge=1, le=512)
+    qdrant_collection: str = "raglab_chunks"
+    bm25_key_prefix: str = "raglab:bm25"
 
     postgres_dsn: str = "postgresql+asyncpg://raglab:raglab@localhost:5432/raglab"
     qdrant_url: AnyHttpUrl = AnyHttpUrl("http://localhost:6333")

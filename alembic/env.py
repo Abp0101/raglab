@@ -8,6 +8,7 @@ from sqlalchemy import Connection, pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from raglab.core.config import get_settings
+from raglab.database import models  # noqa: F401
 from raglab.database.base import Base
 
 config = context.config

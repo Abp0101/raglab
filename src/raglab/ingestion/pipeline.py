@@ -2,6 +2,9 @@
 
 import hashlib
 import time
+from collections.abc import Sequence
+from contextlib import suppress
+from uuid import UUID
 
 from raglab.core.interfaces import (
     Chunker,
@@ -12,6 +15,7 @@ from raglab.core.interfaces import (
     VectorIndexer,
 )
 from raglab.core.schemas import (
+    Chunk,
     ChunkingConfig,
     DocumentInput,
     DocumentStatus,
@@ -72,10 +76,20 @@ class DocumentIngestionPipeline:
         if len(embeddings) != len(chunks):
             raise ValueError("embedding provider must return one vector per chunk")
 
-        await self._vector_indexer.upsert(chunks, embeddings)
-        await self._sparse_indexer.upsert(chunks)
-        ready_document = parsed.document.model_copy(update={"status": DocumentStatus.READY})
-        await self._document_repository.save(ready_document, chunks)
+        processing_document = parsed.document.model_copy(
+            update={"status": DocumentStatus.PROCESSING}
+        )
+        await self._document_repository.save(processing_document, chunks)
+        try:
+            await self._vector_indexer.upsert(chunks, embeddings)
+            await self._sparse_indexer.upsert(chunks)
+            await self._document_repository.set_status(
+                processing_document.document_id, DocumentStatus.READY
+            )
+        except Exception:
+            await self._rollback(processing_document.document_id, chunks)
+            raise
+        ready_document = processing_document.model_copy(update={"status": DocumentStatus.READY})
         return IngestionResult(
             document_id=ready_document.document_id,
             collection_id=ready_document.collection_id,
@@ -87,3 +101,12 @@ class DocumentIngestionPipeline:
             embedding_model=self._embedding_provider.model_name,
             warnings=parsed.warnings,
         )
+
+    async def _rollback(self, document_id: UUID, chunks: Sequence[Chunk]) -> None:
+        """Best-effort compensation without hiding the original indexing failure."""
+        with suppress(Exception):
+            await self._vector_indexer.delete([chunk.chunk_id for chunk in chunks])
+        with suppress(Exception):
+            await self._sparse_indexer.delete(chunks)
+        with suppress(Exception):
+            await self._document_repository.delete(document_id)

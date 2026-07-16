@@ -9,6 +9,7 @@ from raglab.core.schemas import (
     ChunkingConfig,
     Document,
     DocumentInput,
+    DocumentStatus,
     Embedding,
     EvaluationMetricResult,
     EvaluationQuestion,
@@ -53,6 +54,10 @@ class DocumentRepository(Protocol):
 
     async def save(self, document: Document, chunks: Sequence[Chunk]) -> None: ...
 
+    async def set_status(self, document_id: UUID, status: DocumentStatus) -> None: ...
+
+    async def delete(self, document_id: UUID) -> None: ...
+
 
 @runtime_checkable
 class VectorIndexer(Protocol):
@@ -60,12 +65,16 @@ class VectorIndexer(Protocol):
 
     async def upsert(self, chunks: Sequence[Chunk], embeddings: Sequence[Embedding]) -> None: ...
 
+    async def delete(self, chunk_ids: Sequence[UUID]) -> None: ...
+
 
 @runtime_checkable
 class SparseIndexer(Protocol):
     """Store chunks in a lexical index such as BM25."""
 
     async def upsert(self, chunks: Sequence[Chunk]) -> None: ...
+
+    async def delete(self, chunks: Sequence[Chunk]) -> None: ...
 
 
 @runtime_checkable
