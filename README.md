@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, and LangGraph RAG pipelines**, a typed API, and a deterministic local evaluation harness.
+The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, and LlamaIndex RAG pipelines**, a typed API, and a deterministic local evaluation harness.
 
 ## Foundation features
 
@@ -39,6 +39,7 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - Deterministic retrieval, citation, refusal, key-fact, latency, and zero-cost evaluation reports
 - A native LangChain adapter using `BaseRetriever`, `ChatPromptTemplate`, Runnable composition, structured `ChatOllama`, and LangChain document splitting
 - A native LangGraph `StateGraph` with explicit evidence routes and one bounded citation-repair loop
+- A native LlamaIndex adapter using `BaseRetriever`, `TextNode`, `NodeWithScore`, `PromptTemplate`, structured local Ollama, and callback-normalized usage
 - A controlled cross-framework comparison runner that rejects paid cost or failed questions
 
 ## Quick start
@@ -75,6 +76,7 @@ make seed-evaluation # idempotently ingest the evaluation corpus locally
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest # evaluate Custom (default)
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=langchain # evaluate LangChain
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=langgraph # evaluate LangGraph
+make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=llamaindex # evaluate LlamaIndex
 make compare-frameworks RAGLAB_LLM_MODEL=llama3.2:latest # compare all local pipelines
 make smoke-ollama RAGLAB_LLM_MODEL=llama3.2:latest # verify local structured generation
 make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest # exercise the complete local API path
@@ -132,7 +134,7 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
 
 HTTP client ── FastAPI ── request ID + structured logging
               ├── collection + document catalog ── PostgreSQL
-              ├── /query ── pipeline registry ── Custom, LangChain, or LangGraph
+              ├── /query ── registry ── Custom, LangChain, LangGraph, or LlamaIndex
               └── /health/ready checks all three stores
 ```
 
@@ -175,7 +177,7 @@ The framework-free retrieval service supports dense, sparse, and hybrid modes wi
 
 ### Grounded generation
 
-All three pipelines build bounded untrusted context, request strict structured output, validate exact citation quotes, and replace unsupported answers with an insufficient-evidence refusal. LangGraph adds explicit conditional state and one bounded repair route. Their native boundaries and controlled comparison method are documented in [`docs/framework-comparison.md`](docs/framework-comparison.md). OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
+All four pipelines build bounded untrusted context, request strict structured output, validate exact citation quotes, and replace unsupported answers with an insufficient-evidence refusal. LangGraph adds explicit conditional state and one bounded repair route; LlamaIndex maps canonical retrieval into scored native nodes. Their boundaries and controlled comparison method are documented in [`docs/framework-comparison.md`](docs/framework-comparison.md). OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
 
 ### HTTP API
 
@@ -189,13 +191,13 @@ The supported default path is fully local: Ollama generation, Sentence Transform
 
 The first versioned dataset is a small synthetic harness-validation corpus covering wearable sensors, rehabilitation safety, conflicting evidence, and refusal. The loader verifies its checksum and annotations before a run. Reports record the full configuration and compute deterministic retrieval, citation, refusal, lexical key-fact, latency, and cost measurements. Metric formulas, reproducibility rules, limitations, and the testing strategy are documented in [`docs/evaluation-methodology.md`](docs/evaluation-methodology.md).
 
-The first measured custom baseline is recorded in [`reports/baselines/custom-hybrid-reranked-llama3.2-v1.md`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md). Controlled two- and three-pipeline runs are recorded in [`reports/baselines/custom-vs-langchain-llama3.2-v1.md`](reports/baselines/custom-vs-langchain-llama3.2-v1.md) and [`reports/baselines/custom-vs-langchain-vs-langgraph-llama3.2-v1.md`](reports/baselines/custom-vs-langchain-vs-langgraph-llama3.2-v1.md). They retain observed misses and are not presented as framework rankings. `make compare-frameworks` reproduces a local report over the same dataset.
+Measured baselines progress from the first [`Custom run`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md) through controlled [`two-pipeline`](reports/baselines/custom-vs-langchain-llama3.2-v1.md), [`three-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-llama3.2-v1.md), and [`four-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-vs-llamaindex-llama3.2-v1.md) comparisons. They retain observed misses and are not presented as framework rankings. `make compare-frameworks` reproduces a local report over the same dataset.
 
 ## Roadmap
 
-1. LlamaIndex adapter over the canonical corpus and evaluation contract
+1. Haystack adapter over the canonical corpus and evaluation contract
 2. Distributed job leases, pagination, deletion, and authentication
-3. Haystack adapter
+3. Framework-specific indexing experiments under separate benchmark configurations
 4. Observability and failure-path integration hardening
 5. Next.js inspection and evaluation UI
 

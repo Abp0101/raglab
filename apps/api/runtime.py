@@ -20,6 +20,7 @@ from raglab.database import (
 )
 from raglab.embeddings import SentenceTransformerEmbeddingProvider
 from raglab.generation.langchain_ollama import create_ollama_structured_model_factory
+from raglab.generation.llamaindex_ollama import create_llamaindex_ollama_factory
 from raglab.generation.providers import create_llm_provider
 from raglab.ingestion import BackgroundIngestionManager, LangChainIngestionPipeline
 from raglab.ingestion.parsers import PyMuPDFParser
@@ -29,6 +30,7 @@ from raglab.pipelines import (
     CustomRAGPipeline,
     LangChainRAGPipeline,
     LangGraphRAGPipeline,
+    LlamaIndexRAGPipeline,
     PipelineRegistry,
 )
 from raglab.reranking import CrossEncoderReranker
@@ -126,6 +128,15 @@ def build_api_services(settings: Settings) -> ApiServices:
         model_factory=structured_model_factory,
         default_model=settings.llm_model,
     )
+    llamaindex = LlamaIndexRAGPipeline(
+        ingestion=ingestion,
+        retrieval=retrieval,
+        model_factory=create_llamaindex_ollama_factory(
+            str(settings.ollama_base_url),
+            timeout_seconds=settings.llm_timeout_seconds,
+        ),
+        default_model=settings.llm_model,
+    )
     return ApiServices(
         catalog=catalog,
         pipelines=PipelineRegistry(
@@ -133,6 +144,7 @@ def build_api_services(settings: Settings) -> ApiServices:
                 FrameworkName.CUSTOM: custom,
                 FrameworkName.LANGCHAIN: langchain,
                 FrameworkName.LANGGRAPH: langgraph,
+                FrameworkName.LLAMAINDEX: llamaindex,
             }
         ),
         ingestion_jobs=BackgroundIngestionManager(

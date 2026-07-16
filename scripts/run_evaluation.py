@@ -20,6 +20,7 @@ async def main() -> None:
             FrameworkName.CUSTOM.value,
             FrameworkName.LANGCHAIN.value,
             FrameworkName.LANGGRAPH.value,
+            FrameworkName.LLAMAINDEX.value,
         ],
         default=FrameworkName.CUSTOM.value,
     )

@@ -18,6 +18,8 @@ dependencies = [
   "langchain-ollama>=1.0,<2.0",
   "langchain-text-splitters>=1.0,<2.0",
   "langgraph>=1.2,<2.0",
+  "llama-index-core>=0.14,<0.15",
+  "llama-index-llms-ollama>=0.10,<0.11",
   "pydantic-settings>=2.7,<3.0",
   "pymupdf>=1.25,<2.0",
   "python-multipart>=0.0.20,<1.0",
@@ -61,7 +63,7 @@ mypy_path = ["src", "."]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["qdrant_client.*", "sentence_transformers.*"]
+module = ["llama_index.llms.ollama", "qdrant_client.*", "sentence_transformers.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
