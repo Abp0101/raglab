@@ -4,6 +4,7 @@ from raglab.core.schemas.common import RAGLabModel
 from raglab.core.schemas.documents import (
     Chunk,
     ChunkingConfig,
+    ChunkingStrategy,
     Document,
     DocumentInput,
     DocumentMetadata,
@@ -43,6 +44,7 @@ from raglab.core.schemas.query import (
 __all__ = [
     "Chunk",
     "ChunkingConfig",
+    "ChunkingStrategy",
     "Citation",
     "Document",
     "DocumentInput",

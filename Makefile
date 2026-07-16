@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test test-integration test-live-model check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking check run infra-up infra-down
 
 PYTHON ?= python3.12
 VENV := .venv
@@ -28,6 +28,9 @@ test-integration:
 
 test-live-model:
 	$(BIN)/pytest -m live_model
+
+benchmark-chunking:
+	$(BIN)/python scripts/benchmark_chunking.py
 
 check: lint typecheck test
 

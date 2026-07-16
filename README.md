@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains the project foundation, shared contracts, and the first **Phase 3 document-ingestion milestone**. It intentionally does not yet contain question answering or framework integrations.
+The current repository contains the project foundation, shared contracts, persistent document ingestion, and the **Phase 4 chunking strategy suite**. It intentionally does not yet contain question answering or framework integrations.
 
 ## Foundation features
 
@@ -24,6 +24,8 @@ The current repository contains the project foundation, shared contracts, and th
 - PostgreSQL document/chunk persistence with collection-scoped duplicate constraints and Alembic migrations
 - Lazy local Sentence Transformers embeddings, a shared Qdrant vector collection, and Redis-backed BM25 tokens
 - Compensating cleanup when multi-store indexing fails, plus marked real-service integration tests
+- Fixed-token, recursive-character, section-aware, and parent-child chunking with deterministic provenance
+- A versioned structural chunking benchmark and generated-report workflow
 
 ## Quick start
 
@@ -53,6 +55,7 @@ make typecheck    # run strict mypy checks
 make test         # run tests with branch coverage
 make test-integration # test PostgreSQL, Qdrant, and Redis adapters
 make test-live-model  # download/load and verify the default embedding model
+make benchmark-chunking # compare chunk structure without claiming a winner
 make check        # run all local quality gates
 make infra-down   # stop local backing services
 alembic upgrade head  # apply database migrations
@@ -82,7 +85,7 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 ## Current architecture
 
 ```text
-PDF bytes ── validation ── PyMuPDF ── recursive chunks ── local embeddings
+PDF bytes ── validation ── PyMuPDF ── configurable chunks ── local embeddings
                                               │                  │
                                               ▼                  ▼
                                          PostgreSQL           Qdrant
@@ -120,10 +123,16 @@ Storage remains dependency-injected. PostgreSQL is the metadata and chunk source
 
 Normal tests use contract fakes and Qdrant local mode. `make test-integration` requires the Compose services and validates all three real backing stores. `make test-live-model` may download the configured Hugging Face model on first use.
 
+### Chunking strategies
+
+Ingestion can select fixed lexical-token windows, recursive character boundaries, detected sections, or linked parent-child units through the shared `ChunkingConfig`. All strategies retain page, heading, collection, source offsets, and deterministic IDs. Strategy details, size-unit differences, and benchmark interpretation are documented in [`docs/chunking.md`](docs/chunking.md).
+
+`make benchmark-chunking` compares all strategies against versioned synthetic technical and biomedical boundary cases. It reports structural measurements only; retrieval and answer-quality evaluation remains necessary before choosing a strategy.
+
 ## Roadmap
 
-1. Complete configurable chunking strategy suite and benchmark
-2. Framework-free hybrid RAG baseline
+1. Framework-free dense, BM25, hybrid, and reranked RAG baseline
+2. Grounded generation providers, citations, and evidence refusal
 3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
 4. Evaluation harness and reproducible benchmark reports
 5. Next.js inspection and evaluation UI

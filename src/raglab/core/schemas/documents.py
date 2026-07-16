@@ -19,6 +19,15 @@ class DocumentStatus(StrEnum):
     FAILED = "failed"
 
 
+class ChunkingStrategy(StrEnum):
+    """Implemented, benchmarkable chunking strategies."""
+
+    FIXED_TOKEN = "fixed-token"
+    RECURSIVE_CHARACTER = "recursive-character"
+    SECTION_AWARE = "section-aware"
+    PARENT_CHILD = "parent-child"
+
+
 class DocumentInput(RAGLabModel):
     """Untrusted document bytes accepted by an ingestion pipeline."""
 
@@ -130,14 +139,23 @@ class Embedding(RAGLabModel):
 class ChunkingConfig(RAGLabModel):
     """Framework-neutral configuration for a chunking strategy."""
 
-    strategy: str = Field(default="recursive", min_length=1, max_length=100)
+    strategy: ChunkingStrategy = ChunkingStrategy.RECURSIVE_CHARACTER
     chunk_size: int = Field(default=512, ge=32, le=8192)
     chunk_overlap: int = Field(default=64, ge=0)
+    parent_chunk_size: int = Field(default=2048, ge=64, le=32768)
+    parent_chunk_overlap: int = Field(default=128, ge=0)
 
     @model_validator(mode="after")
     def overlap_is_smaller_than_chunk(self) -> Self:
         if self.chunk_overlap >= self.chunk_size:
             raise ValueError("chunk overlap must be smaller than chunk size")
+        if (
+            self.strategy is ChunkingStrategy.PARENT_CHILD
+            and self.parent_chunk_size <= self.chunk_size
+        ):
+            raise ValueError("parent chunk size must be greater than child chunk size")
+        if self.parent_chunk_overlap >= self.parent_chunk_size:
+            raise ValueError("parent chunk overlap must be smaller than parent chunk size")
         return self
 
 
