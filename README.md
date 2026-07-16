@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains the project foundation, shared contracts, persistent ingestion, chunking, retrieval, the first complete **framework-free custom RAG pipeline**, its typed API, and a deterministic local evaluation harness. Framework integrations are not implemented yet.
+The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **custom and LangChain RAG pipelines**, a typed API, and a deterministic local evaluation harness.
 
 ## Foundation features
 
@@ -37,6 +37,8 @@ The current repository contains the project foundation, shared contracts, persis
 - A runtime guard that disables metered OpenAI-compatible generation unless explicitly opted in
 - A checksum-verified synthetic biomedical/technical dataset with reproducible document/chunk IDs
 - Deterministic retrieval, citation, refusal, key-fact, latency, and zero-cost evaluation reports
+- A native LangChain adapter using `BaseRetriever`, `ChatPromptTemplate`, Runnable composition, structured `ChatOllama`, and LangChain document splitting
+- A controlled Custom-versus-LangChain comparison runner that rejects paid cost or failed questions
 
 ## Quick start
 
@@ -69,7 +71,9 @@ make test-live-model  # download/load and verify the default embedding model
 make benchmark-chunking # compare chunk structure without claiming a winner
 make build-evaluation-dataset # rebuild byte-stable synthetic PDFs and annotations
 make seed-evaluation # idempotently ingest the evaluation corpus locally
-make evaluate RAGLAB_LLM_MODEL=llama3.2:latest # write local JSON/Markdown reports
+make evaluate RAGLAB_LLM_MODEL=llama3.2:latest # evaluate Custom (default)
+make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=langchain # evaluate LangChain
+make compare-frameworks RAGLAB_LLM_MODEL=llama3.2:latest # compare both local pipelines
 make smoke-ollama RAGLAB_LLM_MODEL=llama3.2:latest # verify local structured generation
 make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest # exercise the complete local API path
 make check        # run all local quality gates
@@ -126,7 +130,7 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
 
 HTTP client ── FastAPI ── request ID + structured logging
               ├── collection + document catalog ── PostgreSQL
-              ├── /query ── pipeline registry ── custom local RAG
+              ├── /query ── pipeline registry ── custom or LangChain local RAG
               └── /health/ready checks all three stores
 ```
 
@@ -151,7 +155,7 @@ The current ingestion service accepts text-based PDFs only. It rejects path-bear
 
 PDF metadata and page numbers are retained. Section headings are detected conservatively from font-size and textual signals, so heading metadata is useful but not guaranteed. Scanned PDFs and OCR are explicitly out of scope for this milestone.
 
-Extracted document text remains untrusted data. Future generation prompts must delimit it as evidence and explicitly prohibit following instructions found inside a document; parsing and file validation alone cannot prevent prompt injection.
+Extracted document text remains untrusted data. Generation prompts delimit it as evidence and explicitly prohibit following instructions found inside a document; parsing and file validation alone cannot prevent prompt injection.
 
 Storage remains dependency-injected. PostgreSQL is the metadata and chunk source of truth, Qdrant stores normalized dense vectors and filterable payloads, and Redis persists tokenized chunks for BM25 scoring. A shared Qdrant collection is partitioned logically by `collection_id`, avoiding one physical collection per user collection. Ingestion first records `processing` state, then indexes dense and sparse data, marks the document `ready`, and performs best-effort compensation across stores when indexing fails.
 
@@ -169,7 +173,7 @@ The framework-free retrieval service supports dense, sparse, and hybrid modes wi
 
 ### Grounded generation
 
-The custom pipeline builds bounded untrusted context, asks the selected provider for strict structured output, validates exact citation quotes, and replaces unsupported answers with an insufficient-evidence refusal. OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
+The custom and LangChain pipelines build bounded untrusted context, request strict structured output, validate exact citation quotes, and replace unsupported answers with an insufficient-evidence refusal. Their native boundaries and controlled comparison method are documented in [`docs/framework-comparison.md`](docs/framework-comparison.md). OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
 
 ### HTTP API
 
@@ -183,14 +187,14 @@ The supported default path is fully local: Ollama generation, Sentence Transform
 
 The first versioned dataset is a small synthetic harness-validation corpus covering wearable sensors, rehabilitation safety, conflicting evidence, and refusal. The loader verifies its checksum and annotations before a run. Reports record the full configuration and compute deterministic retrieval, citation, refusal, lexical key-fact, latency, and cost measurements. Metric formulas, reproducibility rules, limitations, and the testing strategy are documented in [`docs/evaluation-methodology.md`](docs/evaluation-methodology.md).
 
-The first measured custom baseline is recorded in [`reports/baselines/custom-hybrid-reranked-llama3.2-v1.md`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md). It includes the observed over-citation and failed unanswerable case; it is not presented as a framework ranking.
+The first measured custom baseline is recorded in [`reports/baselines/custom-hybrid-reranked-llama3.2-v1.md`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md). The first controlled two-pipeline run is recorded in [`reports/baselines/custom-vs-langchain-llama3.2-v1.md`](reports/baselines/custom-vs-langchain-llama3.2-v1.md). Both retain observed misses and are not presented as framework rankings. `make compare-frameworks` reproduces a local report over the same dataset.
 
 ## Roadmap
 
-1. LangChain RAG adapter and first controlled cross-implementation comparison
+1. LangGraph adapter with explicit retrieval/generation state transitions
 2. Distributed job leases, pagination, deletion, and authentication
-3. LangGraph, LlamaIndex, and Haystack adapters
+3. LlamaIndex and Haystack adapters
 4. Observability and failure-path integration hardening
 5. Next.js inspection and evaluation UI
 
-Cross-framework comparison tables will be added only after multiple implementations have run the exact same versioned dataset and configuration. The current single custom baseline supports no framework-superiority claim.
+Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.

@@ -1,6 +1,7 @@
 """Secure, framework-independent document ingestion."""
 
 from raglab.ingestion.jobs import BackgroundIngestionManager
+from raglab.ingestion.langchain_pipeline import LangChainIngestionPipeline
 from raglab.ingestion.parsers import PyMuPDFParser
 from raglab.ingestion.pipeline import DocumentIngestionPipeline
 from raglab.ingestion.validation import PdfUploadValidator
@@ -8,6 +9,7 @@ from raglab.ingestion.validation import PdfUploadValidator
 __all__ = [
     "BackgroundIngestionManager",
     "DocumentIngestionPipeline",
+    "LangChainIngestionPipeline",
     "PdfUploadValidator",
     "PyMuPDFParser",
 ]

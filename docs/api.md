@@ -44,7 +44,7 @@ curl -X POST http://localhost:8000/query \
   }'
 ```
 
-Only `custom` is currently executable. `/pipelines` returns all five target framework names and marks unimplemented adapters unavailable. Selecting an unavailable implementation returns HTTP 501.
+`custom` and `langchain` are executable. `/pipelines` returns all five target framework names and marks the remaining adapters unavailable. Selecting an unavailable implementation returns HTTP 501.
 
 ## Background ingestion
 

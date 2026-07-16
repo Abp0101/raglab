@@ -20,11 +20,12 @@ from raglab.database import (
 )
 from raglab.embeddings import SentenceTransformerEmbeddingProvider
 from raglab.generation.providers import create_llm_provider
-from raglab.ingestion import BackgroundIngestionManager
+from raglab.ingestion import BackgroundIngestionManager, LangChainIngestionPipeline
 from raglab.ingestion.parsers import PyMuPDFParser
 from raglab.ingestion.pipeline import DocumentIngestionPipeline
 from raglab.ingestion.validation import PdfUploadValidator
-from raglab.pipelines import CustomRAGPipeline, PipelineRegistry
+from raglab.pipelines import CustomRAGPipeline, LangChainRAGPipeline, PipelineRegistry
+from raglab.pipelines.langchain_rag import create_ollama_structured_model_factory
 from raglab.reranking import CrossEncoderReranker
 from raglab.retrieval import RetrievalService
 from raglab.retrieval.parent_expansion import ParentChildContextExpander
@@ -97,9 +98,30 @@ def build_api_services(settings: Settings) -> ApiServices:
         llm=create_llm_provider(settings),
         default_model=settings.llm_model,
     )
+    langchain = LangChainRAGPipeline(
+        ingestion=LangChainIngestionPipeline(
+            validator=validator,
+            parser=PyMuPDFParser(validator, max_pages=settings.max_pdf_pages),
+            embedding_provider=embeddings,
+            document_repository=documents,
+            vector_indexer=vector_index,
+            sparse_indexer=sparse_index,
+        ),
+        retrieval=retrieval,
+        model_factory=create_ollama_structured_model_factory(
+            str(settings.ollama_base_url),
+            timeout_seconds=settings.llm_timeout_seconds,
+        ),
+        default_model=settings.llm_model,
+    )
     return ApiServices(
         catalog=catalog,
-        pipelines=PipelineRegistry({FrameworkName.CUSTOM: custom}),
+        pipelines=PipelineRegistry(
+            {
+                FrameworkName.CUSTOM: custom,
+                FrameworkName.LANGCHAIN: langchain,
+            }
+        ),
         ingestion_jobs=BackgroundIngestionManager(
             job_repository,
             custom,

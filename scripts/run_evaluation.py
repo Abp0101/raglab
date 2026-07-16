@@ -1,4 +1,4 @@
-"""Run deterministic metrics against the local Ollama-backed custom pipeline."""
+"""Run deterministic metrics against a local Ollama-backed RAG pipeline."""
 
 import argparse
 import asyncio
@@ -14,6 +14,11 @@ from raglab.evaluation import EvaluationRunner, build_report, load_dataset, writ
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model", required=True, help="Already installed local Ollama model")
+    parser.add_argument(
+        "--framework",
+        choices=[FrameworkName.CUSTOM.value, FrameworkName.LANGCHAIN.value],
+        default=FrameworkName.CUSTOM.value,
+    )
     parser.add_argument("--dataset", type=Path, default=Path("datasets/evaluation/v1"))
     parser.add_argument("--output", type=Path, default=Path("reports/generated"))
     parser.add_argument("--top-k", type=int, default=5)
@@ -34,11 +39,12 @@ async def main() -> None:
     )
     services = build_api_services(settings)
     try:
-        pipeline = services.pipelines.get(FrameworkName.CUSTOM)
+        framework = FrameworkName(args.framework)
+        pipeline = services.pipelines.get(framework)
         run = await EvaluationRunner(pipeline.query).run(
             dataset,
             EvaluationRunConfig(
-                framework=FrameworkName.CUSTOM,
+                framework=framework,
                 retrieval_mode=RetrievalMode(args.retrieval_mode),
                 top_k=args.top_k,
                 rerank=not args.no_rerank,

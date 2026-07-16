@@ -1,6 +1,7 @@
-.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking build-evaluation-dataset seed-evaluation evaluate smoke-ollama smoke-api check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking build-evaluation-dataset seed-evaluation evaluate compare-frameworks smoke-ollama smoke-api check run infra-up infra-down
 
 PYTHON ?= python3.12
+RAGLAB_FRAMEWORK ?= custom
 VENV := .venv
 BIN := $(VENV)/bin
 
@@ -39,7 +40,10 @@ seed-evaluation:
 	$(BIN)/python scripts/seed_evaluation.py
 
 evaluate:
-	$(BIN)/python scripts/run_evaluation.py --model $(RAGLAB_LLM_MODEL)
+	$(BIN)/python scripts/run_evaluation.py --model $(RAGLAB_LLM_MODEL) --framework $(RAGLAB_FRAMEWORK)
+
+compare-frameworks:
+	$(BIN)/python scripts/compare_frameworks.py --model $(RAGLAB_LLM_MODEL)
 
 smoke-ollama:
 	$(BIN)/python scripts/smoke_ollama.py --model $(RAGLAB_LLM_MODEL)
