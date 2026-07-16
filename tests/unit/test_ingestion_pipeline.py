@@ -5,6 +5,7 @@ import pymupdf
 import pytest
 
 from raglab.chunking import ParentChildChunker, RecursiveCharacterChunker
+from raglab.core.exceptions import ProviderUnavailableError
 from raglab.core.schemas import (
     Chunk,
     ChunkingConfig,
@@ -189,7 +190,7 @@ async def test_pipeline_compensates_when_indexing_fails() -> None:
     sparse = FakeSparseIndexer()
     pipeline = build_pipeline(repository, embeddings, vectors, sparse)
 
-    with pytest.raises(RuntimeError, match="vector indexing failed"):
+    with pytest.raises(ProviderUnavailableError, match="document indexing failed"):
         await pipeline.ingest(
             DocumentInput(file_name="imu.pdf", content=make_pdf(), collection_id=uuid4())
         )

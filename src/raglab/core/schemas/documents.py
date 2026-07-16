@@ -19,6 +19,24 @@ class DocumentStatus(StrEnum):
     FAILED = "failed"
 
 
+class CollectionCreate(RAGLabModel):
+    """Validated input for a logical document collection."""
+
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4000)
+
+
+class Collection(RAGLabModel):
+    """Logical corpus shared by every RAG pipeline implementation."""
+
+    collection_id: UUID
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=4000)
+    created_at: datetime
+    updated_at: datetime
+    document_count: int = Field(default=0, ge=0)
+
+
 class ChunkingStrategy(StrEnum):
     """Implemented, benchmarkable chunking strategies."""
 

@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains the project foundation, shared contracts, persistent ingestion, chunking, retrieval, and the first complete **framework-free custom RAG pipeline**. Framework integrations and public query endpoints are not implemented yet.
+The current repository contains the project foundation, shared contracts, persistent ingestion, chunking, retrieval, the first complete **framework-free custom RAG pipeline**, and its typed collection, document, pipeline-discovery, and query API. Framework integrations are not implemented yet.
 
 ## Foundation features
 
@@ -30,6 +30,9 @@ The current repository contains the project foundation, shared contracts, persis
 - Optional local cross-encoder reranking and deduplicated parent-context expansion
 - OpenAI-compatible and Ollama generation providers with structured usage and optional cost data
 - Grounded structured answers, deterministic citation checks, prompt-injection boundaries, and refusal rules
+- Collection creation, bounded PDF upload, document listing, pipeline discovery, and shared query endpoints
+- Stable safe-error envelopes for validation, missing resources, unavailable frameworks, and providers
+- A runtime guard that disables metered OpenAI-compatible generation unless explicitly opted in
 
 ## Quick start
 
@@ -60,6 +63,8 @@ make test         # run tests with branch coverage
 make test-integration # test PostgreSQL, Qdrant, and Redis adapters
 make test-live-model  # download/load and verify the default embedding model
 make benchmark-chunking # compare chunk structure without claiming a winner
+make smoke-ollama RAGLAB_LLM_MODEL=llama3.2:latest # verify local structured generation
+make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest # exercise the complete local API path
 make check        # run all local quality gates
 make infra-down   # stop local backing services
 alembic upgrade head  # apply database migrations
@@ -82,9 +87,11 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 | `RAGLAB_RERANKER_MODEL` | Local cross-encoder reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
 | `RAGLAB_RERANKER_BATCH_SIZE` | Reranker batch size | `16` |
 | `RAGLAB_QDRANT_COLLECTION` | Shared dense-vector collection | `raglab_chunks` |
+| `RAGLAB_QDRANT_TIMEOUT_SECONDS` | Local vector-store request timeout | `30` |
 | `RAGLAB_BM25_KEY_PREFIX` | Redis namespace for sparse tokens | `raglab:bm25` |
 | `RAGLAB_LLM_PROVIDER` | `ollama` or `openai_compatible` | `ollama` |
 | `RAGLAB_LLM_MODEL` | Model passed to the selected provider | `qwen3:8b` |
+| `RAGLAB_ALLOW_PAID_API_USAGE` | Explicit safety opt-in for a metered provider | `false` |
 | `RAGLAB_OPENAI_BASE_URL` | OpenAI-compatible API root | `https://api.openai.com/v1` |
 | `RAGLAB_OPENAI_API_KEY` | Optional bearer credential | Empty |
 | `RAGLAB_OPENAI_INSTRUCTION_ROLE` | Compatible instruction role | `developer` |
@@ -110,7 +117,9 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
                                               └── tokenization ── Redis/BM25
 
 HTTP client ── FastAPI ── request ID + structured logging
-                         └── /health/ready checks all three stores
+              ├── collection + document catalog ── PostgreSQL
+              ├── /query ── pipeline registry ── custom local RAG
+              └── /health/ready checks all three stores
 ```
 
 Application code is split between the deployable API in `apps/api` and reusable, framework-independent code in `src/raglab`. RAG implementations depend on the models in `raglab.core.schemas` and protocols in `raglab.core.interfaces`, rather than importing types from another framework adapter.
@@ -154,9 +163,17 @@ The framework-free retrieval service supports dense, sparse, and hybrid modes wi
 
 The custom pipeline builds bounded untrusted context, asks the selected provider for strict structured output, validates exact citation quotes, and replaces unsupported answers with an insufficient-evidence refusal. OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
 
+### HTTP API
+
+FastAPI now exposes collection creation and listing, bounded multipart PDF ingestion, document metadata, pipeline capability discovery, and the shared query contract. Endpoint examples, status mappings, and deliberately deferred streaming/background behavior are documented in [`docs/api.md`](docs/api.md).
+
+### Zero paid API policy
+
+The supported default path is fully local: Ollama generation, Sentence Transformers embeddings, cross-encoder reranking, PostgreSQL, Qdrant, and Redis. `RAGLAB_ALLOW_PAID_API_USAGE=false` blocks construction of the OpenAI-compatible adapter even if someone changes the provider name. Its implementation remains for portfolio completeness and is tested only with mocked HTTP; RAGLab development, tests, demos, and evaluation must not invoke metered APIs.
+
 ## Roadmap
 
-1. Document, collection, query, streaming, and pipeline API endpoints
+1. Native query streaming and background ingestion job contracts
 2. Evaluation dataset, deterministic retrieval/citation metrics, and reports
 3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
 4. Observability and failure-path integration hardening

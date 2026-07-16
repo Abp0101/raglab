@@ -6,6 +6,8 @@ Phase 5B completes the framework-free RAG path from retrieval to a validated ans
 
 The OpenAI-compatible adapter uses `POST /chat/completions`, structured `response_format`, provider-reported token usage, and optional user-configured per-million-token rates. It does not hard-code model pricing because prices change and compatible providers differ. Current OpenAI defaults use a `developer` instruction message, JSON Schema structured output, and `max_completion_tokens`; each can be changed for compatible servers through environment settings.
 
+RAGLab's project policy is zero paid API usage. The OpenAI-compatible adapter is disabled by default with `RAGLAB_ALLOW_PAID_API_USAGE=false`; selecting it without the explicit opt-in fails during service construction. It remains in the codebase as a provider-boundary demonstration and is covered using mocked HTTP only. The normal runtime, demos, and future evaluation use Ollama.
+
 The Ollama adapter uses `POST /api/chat`, disables streaming for structured validation, passes the Pydantic JSON Schema through `format`, and maps `prompt_eval_count` and `eval_count` into shared usage metrics. Local generation reports estimated API cost as zero; hardware and electricity costs are outside the current estimator.
 
 Pull the default model and verify it with:

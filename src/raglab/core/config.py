@@ -29,9 +29,11 @@ class Settings(BaseSettings):
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     reranker_batch_size: int = Field(default=16, ge=1, le=256)
     qdrant_collection: str = "raglab_chunks"
+    qdrant_timeout_seconds: int = Field(default=30, gt=0, le=300)
     bm25_key_prefix: str = "raglab:bm25"
     llm_provider: Literal["openai_compatible", "ollama"] = "ollama"
     llm_model: str = "qwen3:8b"
+    allow_paid_api_usage: bool = False
     openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
     openai_api_key: str | None = None
     openai_instruction_role: Literal["developer", "system"] = "developer"

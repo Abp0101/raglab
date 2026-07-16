@@ -6,6 +6,7 @@ from collections.abc import Sequence
 from contextlib import suppress
 from uuid import UUID
 
+from raglab.core.exceptions import ProviderUnavailableError, RAGLabError
 from raglab.core.interfaces import (
     Chunker,
     DocumentParser,
@@ -92,9 +93,11 @@ class DocumentIngestionPipeline:
             await self._document_repository.set_status(
                 processing_document.document_id, DocumentStatus.READY
             )
-        except Exception:
+        except Exception as error:
             await self._rollback(processing_document.document_id, retrieval_chunks)
-            raise
+            if isinstance(error, RAGLabError):
+                raise
+            raise ProviderUnavailableError("document indexing failed") from error
         ready_document = processing_document.model_copy(update={"status": DocumentStatus.READY})
         return IngestionResult(
             document_id=ready_document.document_id,

@@ -3,15 +3,93 @@
 import hashlib
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from raglab.core.exceptions import CollectionNotFoundError, DuplicateDocumentError
-from raglab.core.schemas import Chunk, Document, DocumentMetadata, DocumentStatus, TextSpan
+from raglab.core.exceptions import (
+    CollectionNotFoundError,
+    DocumentNotFoundError,
+    DuplicateDocumentError,
+)
+from raglab.core.schemas import (
+    Chunk,
+    Collection,
+    CollectionCreate,
+    Document,
+    DocumentMetadata,
+    DocumentStatus,
+    TextSpan,
+)
 from raglab.database.models import ChunkRecord, CollectionRecord, DocumentRecord
+
+
+class SQLAlchemyCatalogRepository:
+    """Manage collection records and read document metadata for the API."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def create_collection(self, request: CollectionCreate) -> Collection:
+        now = datetime.now(UTC)
+        record = CollectionRecord(
+            id=uuid4(),
+            name=request.name,
+            description=request.description,
+            created_at=now,
+            updated_at=now,
+        )
+        async with self._sessions() as session, session.begin():
+            session.add(record)
+            await session.flush()
+        return _to_collection(record, document_count=0)
+
+    async def list_collections(self) -> Sequence[Collection]:
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    select(CollectionRecord, func.count(DocumentRecord.id))
+                    .outerjoin(DocumentRecord)
+                    .group_by(CollectionRecord.id)
+                    .order_by(CollectionRecord.created_at, CollectionRecord.id)
+                )
+            ).all()
+        return tuple(_to_collection(record, document_count=count) for record, count in rows)
+
+    async def get_collection(self, collection_id: UUID) -> Collection:
+        async with self._sessions() as session:
+            row = (
+                await session.execute(
+                    select(CollectionRecord, func.count(DocumentRecord.id))
+                    .outerjoin(DocumentRecord)
+                    .where(CollectionRecord.id == collection_id)
+                    .group_by(CollectionRecord.id)
+                )
+            ).one_or_none()
+        if row is None:
+            raise CollectionNotFoundError(f"collection {collection_id} does not exist")
+        return _to_collection(row[0], document_count=row[1])
+
+    async def list_documents(self, collection_id: UUID) -> Sequence[Document]:
+        await self.get_collection(collection_id)
+        async with self._sessions() as session:
+            records = (
+                await session.scalars(
+                    select(DocumentRecord)
+                    .where(DocumentRecord.collection_id == collection_id)
+                    .order_by(DocumentRecord.uploaded_at, DocumentRecord.id)
+                )
+            ).all()
+        return tuple(_to_document(record) for record in records)
+
+    async def get_document(self, document_id: UUID) -> Document:
+        async with self._sessions() as session:
+            record = await session.get(DocumentRecord, document_id)
+        if record is None:
+            raise DocumentNotFoundError(f"document {document_id} does not exist")
+        return _to_document(record)
 
 
 class SQLAlchemyDocumentRepository:
@@ -99,6 +177,17 @@ def _document_record(document: Document, now: datetime) -> DocumentRecord:
         status=document.status.value,
         created_at=now,
         updated_at=now,
+    )
+
+
+def _to_collection(record: CollectionRecord, *, document_count: int) -> Collection:
+    return Collection(
+        collection_id=record.id,
+        name=record.name,
+        description=record.description,
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        document_count=document_count,
     )
 
 

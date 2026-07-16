@@ -11,6 +11,7 @@ from sqlalchemy import delete, select
 from raglab.core.config import Settings
 from raglab.core.schemas import (
     Chunk,
+    CollectionCreate,
     Document,
     DocumentMetadata,
     DocumentStatus,
@@ -18,7 +19,11 @@ from raglab.core.schemas import (
     RetrievalRequest,
 )
 from raglab.database.models import CollectionRecord, DocumentRecord
-from raglab.database.repositories import SQLAlchemyChunkRepository, SQLAlchemyDocumentRepository
+from raglab.database.repositories import (
+    SQLAlchemyCatalogRepository,
+    SQLAlchemyChunkRepository,
+    SQLAlchemyDocumentRepository,
+)
 from raglab.database.session import create_engine, create_session_factory
 from raglab.retrieval import (
     QdrantDenseRetriever,
@@ -28,6 +33,36 @@ from raglab.retrieval import (
 )
 
 pytestmark = pytest.mark.integration
+
+
+@pytest.mark.asyncio
+async def test_collection_catalog_round_trip() -> None:
+    settings = Settings(_env_file=None)
+    engine = create_engine(settings.postgres_dsn)
+    sessions = create_session_factory(engine)
+    catalog = SQLAlchemyCatalogRepository(sessions)
+    collection_id = None
+
+    try:
+        created = await catalog.create_collection(
+            CollectionCreate(name="API integration", description="Local services only")
+        )
+        collection_id = created.collection_id
+
+        fetched = await catalog.get_collection(created.collection_id)
+        listed = await catalog.list_collections()
+
+        assert fetched.name == "API integration"
+        assert fetched.document_count == 0
+        assert created.collection_id in {item.collection_id for item in listed}
+    finally:
+        if collection_id is not None:
+            with suppress(Exception):
+                async with sessions() as session, session.begin():
+                    await session.execute(
+                        delete(CollectionRecord).where(CollectionRecord.id == collection_id)
+                    )
+        await engine.dispose()
 
 
 def make_document_and_chunks() -> tuple[Document, Sequence[Chunk]]:

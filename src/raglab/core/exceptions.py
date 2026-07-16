@@ -21,6 +21,18 @@ class CollectionNotFoundError(RAGLabError):
     """The requested collection does not exist."""
 
 
+class DocumentNotFoundError(RAGLabError):
+    """The requested document does not exist."""
+
+
+class PaidProviderDisabledError(RAGLabError):
+    """A metered remote provider was selected without an explicit safety opt-in."""
+
+
+class UnsupportedFrameworkError(RAGLabError):
+    """The requested framework adapter has not been registered."""
+
+
 class ProviderUnavailableError(RAGLabError):
     """An embedding, model, or storage provider could not respond."""
 

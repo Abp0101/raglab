@@ -4,7 +4,11 @@ import httpx
 import pytest
 
 from raglab.core.config import Settings
-from raglab.core.exceptions import MalformedProviderResponseError, ProviderUnavailableError
+from raglab.core.exceptions import (
+    MalformedProviderResponseError,
+    PaidProviderDisabledError,
+    ProviderUnavailableError,
+)
 from raglab.core.schemas import GenerationRequest
 from raglab.generation.providers import (
     OllamaProvider,
@@ -122,7 +126,20 @@ async def test_provider_rejects_missing_assistant_content() -> None:
 
 def test_provider_factory_selects_configured_adapter() -> None:
     ollama = create_llm_provider(Settings(llm_provider="ollama", _env_file=None))
-    compatible = create_llm_provider(Settings(llm_provider="openai_compatible", _env_file=None))
+    compatible = create_llm_provider(
+        Settings(
+            llm_provider="openai_compatible",
+            allow_paid_api_usage=True,
+            _env_file=None,
+        )
+    )
 
     assert isinstance(ollama, OllamaProvider)
     assert isinstance(compatible, OpenAICompatibleProvider)
+
+
+def test_provider_factory_blocks_paid_provider_by_default() -> None:
+    settings = Settings(llm_provider="openai_compatible", _env_file=None)
+
+    with pytest.raises(PaidProviderDisabledError, match="paid API usage is not allowed"):
+        create_llm_provider(settings)

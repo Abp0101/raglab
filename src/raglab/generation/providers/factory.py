@@ -1,6 +1,7 @@
 """Configuration-driven LLM provider construction."""
 
 from raglab.core.config import Settings
+from raglab.core.exceptions import PaidProviderDisabledError
 from raglab.core.interfaces import LLMProvider
 from raglab.generation.providers.ollama import OllamaProvider
 from raglab.generation.providers.openai_compatible import OpenAICompatibleProvider
@@ -11,6 +12,10 @@ def create_llm_provider(settings: Settings) -> LLMProvider:
     if settings.llm_provider == "ollama":
         return OllamaProvider(
             str(settings.ollama_base_url), timeout_seconds=settings.llm_timeout_seconds
+        )
+    if not settings.allow_paid_api_usage:
+        raise PaidProviderDisabledError(
+            "OpenAI-compatible generation is disabled because paid API usage is not allowed"
         )
     return OpenAICompatibleProvider(
         str(settings.openai_base_url),

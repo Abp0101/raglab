@@ -7,6 +7,8 @@ from uuid import UUID
 from raglab.core.schemas import (
     Chunk,
     ChunkingConfig,
+    Collection,
+    CollectionCreate,
     Document,
     DocumentInput,
     DocumentStatus,
@@ -24,6 +26,21 @@ from raglab.core.schemas import (
     RetrievalRequest,
     RetrievedChunk,
 )
+
+
+@runtime_checkable
+class CatalogRepository(Protocol):
+    """Manage collections and expose document metadata to the public API."""
+
+    async def create_collection(self, request: CollectionCreate) -> Collection: ...
+
+    async def list_collections(self) -> Sequence[Collection]: ...
+
+    async def get_collection(self, collection_id: UUID) -> Collection: ...
+
+    async def list_documents(self, collection_id: UUID) -> Sequence[Document]: ...
+
+    async def get_document(self, document_id: UUID) -> Document: ...
 
 
 @runtime_checkable

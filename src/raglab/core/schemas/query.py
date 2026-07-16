@@ -125,6 +125,15 @@ class PipelineCapabilities(RAGLabModel):
     agentic: bool = False
 
 
+class PipelineSummary(RAGLabModel):
+    """Discoverable API description of one pipeline implementation."""
+
+    framework: FrameworkName
+    available: bool
+    capabilities: PipelineCapabilities
+    config: PipelineConfig
+
+
 class QueryRequest(RAGLabModel):
     """Validated request accepted by any RAG pipeline."""
 

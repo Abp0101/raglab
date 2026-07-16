@@ -6,15 +6,22 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from apps.api.errors import register_exception_handlers
+from apps.api.routes.collections import router as collections_router
+from apps.api.routes.documents import router as documents_router
 from apps.api.routes.health import router as health_router
+from apps.api.routes.pipelines import router as pipelines_router
+from apps.api.routes.query import router as query_router
+from apps.api.runtime import ApiServices, build_api_services
 from raglab.core.config import Settings, get_settings
-from raglab.core.health import InfrastructureReadinessProbe, ReadinessProbe
+from raglab.core.health import ReadinessProbe
 from raglab.core.logging import RequestLoggingMiddleware, configure_logging
 
 
 def create_app(
     settings: Settings | None = None,
     readiness_probe: ReadinessProbe | None = None,
+    services: ApiServices | None = None,
 ) -> FastAPI:
     """Build an application with explicit, testable dependencies."""
     app_settings = settings or get_settings()
@@ -22,10 +29,18 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(application: FastAPI) -> AsyncIterator[None]:
-        probe = readiness_probe or InfrastructureReadinessProbe.from_settings(app_settings)
+        runtime = services or build_api_services(app_settings)
+        probe = readiness_probe or runtime.readiness_probe
+        application.state.settings = app_settings
         application.state.readiness_probe = probe
-        yield
-        await probe.close()
+        application.state.catalog_repository = runtime.catalog
+        application.state.pipeline_registry = runtime.pipelines
+        try:
+            yield
+        finally:
+            await runtime.close()
+            if readiness_probe is not None and readiness_probe is not runtime.readiness_probe:
+                await readiness_probe.close()
 
     application = FastAPI(
         title=app_settings.app_name,
@@ -41,7 +56,12 @@ def create_app(
         allow_headers=["*"],
     )
     application.add_middleware(RequestLoggingMiddleware)
+    register_exception_handlers(application)
     application.include_router(health_router)
+    application.include_router(collections_router)
+    application.include_router(documents_router)
+    application.include_router(pipelines_router)
+    application.include_router(query_router)
     return application
 
 

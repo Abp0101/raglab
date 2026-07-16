@@ -10,6 +10,8 @@ def test_settings_have_local_defaults() -> None:
     assert settings.postgres_dsn.startswith("postgresql+asyncpg://")
     assert str(settings.qdrant_url) == "http://localhost:6333/"
     assert str(settings.redis_dsn) == "redis://localhost:6379/0"
+    assert settings.llm_provider == "ollama"
+    assert settings.allow_paid_api_usage is False
 
 
 def test_settings_load_prefixed_environment(monkeypatch: pytest.MonkeyPatch) -> None:
