@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains the project foundation, shared contracts, persistent ingestion, the chunking strategy suite, and the **Phase 5A framework-free retrieval baseline**. It intentionally does not yet contain answer generation or framework integrations.
+The current repository contains the project foundation, shared contracts, persistent ingestion, chunking, retrieval, and the first complete **framework-free custom RAG pipeline**. Framework integrations and public query endpoints are not implemented yet.
 
 ## Foundation features
 
@@ -28,6 +28,8 @@ The current repository contains the project foundation, shared contracts, persis
 - A versioned structural chunking benchmark and generated-report workflow
 - Dense Qdrant, exact BM25, and hybrid Reciprocal Rank Fusion retrieval with shared filters
 - Optional local cross-encoder reranking and deduplicated parent-context expansion
+- OpenAI-compatible and Ollama generation providers with structured usage and optional cost data
+- Grounded structured answers, deterministic citation checks, prompt-injection boundaries, and refusal rules
 
 ## Quick start
 
@@ -81,6 +83,17 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 | `RAGLAB_RERANKER_BATCH_SIZE` | Reranker batch size | `16` |
 | `RAGLAB_QDRANT_COLLECTION` | Shared dense-vector collection | `raglab_chunks` |
 | `RAGLAB_BM25_KEY_PREFIX` | Redis namespace for sparse tokens | `raglab:bm25` |
+| `RAGLAB_LLM_PROVIDER` | `ollama` or `openai_compatible` | `ollama` |
+| `RAGLAB_LLM_MODEL` | Model passed to the selected provider | `qwen3:8b` |
+| `RAGLAB_OPENAI_BASE_URL` | OpenAI-compatible API root | `https://api.openai.com/v1` |
+| `RAGLAB_OPENAI_API_KEY` | Optional bearer credential | Empty |
+| `RAGLAB_OPENAI_INSTRUCTION_ROLE` | Compatible instruction role | `developer` |
+| `RAGLAB_OPENAI_STRUCTURED_OUTPUT_MODE` | `json_schema` or `json_object` | `json_schema` |
+| `RAGLAB_OPENAI_MAX_TOKENS_FIELD` | Compatible output-limit field | `max_completion_tokens` |
+| `RAGLAB_OLLAMA_BASE_URL` | Local Ollama root | `http://localhost:11434` |
+| `RAGLAB_LLM_TIMEOUT_SECONDS` | Generation request timeout | `120` |
+| `RAGLAB_INPUT_COST_PER_MILLION` | Optional provider input rate | Empty |
+| `RAGLAB_OUTPUT_COST_PER_MILLION` | Optional provider output rate | Empty |
 | `RAGLAB_POSTGRES_DSN` | Async SQLAlchemy connection URL | Local Compose PostgreSQL |
 | `RAGLAB_QDRANT_URL` | Qdrant HTTP endpoint | `http://localhost:6333` |
 | `RAGLAB_QDRANT_API_KEY` | Optional Qdrant credential | Empty |
@@ -137,12 +150,16 @@ Ingestion can select fixed lexical-token windows, recursive character boundaries
 
 The framework-free retrieval service supports dense, sparse, and hybrid modes with explicit native and fused score provenance. It applies portable metadata filters consistently, optionally reranks candidates using a local cross-encoder, and expands linked children to larger relational parent context. The design, formulas, filtering semantics, and current BM25 scaling boundary are documented in [`docs/retrieval.md`](docs/retrieval.md).
 
+### Grounded generation
+
+The custom pipeline builds bounded untrusted context, asks the selected provider for strict structured output, validates exact citation quotes, and replaces unsupported answers with an insufficient-evidence refusal. OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
+
 ## Roadmap
 
-1. Grounded generation providers, citations, evidence sufficiency, and refusal behavior
-2. Complete the framework-free `CustomRAGPipeline`
+1. Document, collection, query, streaming, and pipeline API endpoints
+2. Evaluation dataset, deterministic retrieval/citation metrics, and reports
 3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
-4. Evaluation harness and reproducible benchmark reports
+4. Observability and failure-path integration hardening
 5. Next.js inspection and evaluation UI
 
 Benchmark tables will be added only after the evaluation dataset and pipelines have been run. No performance claims are made at this stage.

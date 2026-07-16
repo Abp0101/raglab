@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking smoke-ollama check run infra-up infra-down
 
 PYTHON ?= python3.12
 VENV := .venv
@@ -31,6 +31,9 @@ test-live-model:
 
 benchmark-chunking:
 	$(BIN)/python scripts/benchmark_chunking.py
+
+smoke-ollama:
+	$(BIN)/python scripts/smoke_ollama.py --model $(RAGLAB_LLM_MODEL)
 
 check: lint typecheck test
 

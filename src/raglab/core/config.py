@@ -30,6 +30,19 @@ class Settings(BaseSettings):
     reranker_batch_size: int = Field(default=16, ge=1, le=256)
     qdrant_collection: str = "raglab_chunks"
     bm25_key_prefix: str = "raglab:bm25"
+    llm_provider: Literal["openai_compatible", "ollama"] = "ollama"
+    llm_model: str = "qwen3:8b"
+    openai_base_url: AnyHttpUrl = AnyHttpUrl("https://api.openai.com/v1")
+    openai_api_key: str | None = None
+    openai_instruction_role: Literal["developer", "system"] = "developer"
+    openai_structured_output_mode: Literal["json_schema", "json_object"] = "json_schema"
+    openai_max_tokens_field: Literal["max_completion_tokens", "max_tokens"] = (
+        "max_completion_tokens"
+    )
+    ollama_base_url: AnyHttpUrl = AnyHttpUrl("http://localhost:11434")
+    llm_timeout_seconds: float = Field(default=120, gt=0, le=600)
+    input_cost_per_million: float | None = Field(default=None, ge=0)
+    output_cost_per_million: float | None = Field(default=None, ge=0)
 
     postgres_dsn: str = "postgresql+asyncpg://raglab:raglab@localhost:5432/raglab"
     qdrant_url: AnyHttpUrl = AnyHttpUrl("http://localhost:6333")

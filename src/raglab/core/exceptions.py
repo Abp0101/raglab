@@ -25,5 +25,9 @@ class ProviderUnavailableError(RAGLabError):
     """An embedding, model, or storage provider could not respond."""
 
 
+class MalformedProviderResponseError(RAGLabError):
+    """A provider response could not be parsed into the required contract."""
+
+
 class InsufficientEvidenceError(RAGLabError):
     """Retrieved evidence does not support a grounded answer."""
