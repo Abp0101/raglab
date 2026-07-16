@@ -1,0 +1,60 @@
+{
+  "collection_id": "fa9cc0a3-0a57-596f-86d4-7ed2a2640d89",
+  "collection_name": "RAGLab Evaluation v1",
+  "documents": [
+    {
+      "chunks": [
+        {
+          "chunk_id": "3b1cb956-a302-551d-b204-077761b56c12",
+          "page_number": 1,
+          "section_heading": "METHODS",
+          "text": "METHODS\n\nThe prototype used a six-axis IMU mounted on the shank and sampled motion at 100 Hz. A\nforce-sensitive resistor under the heel recorded foot contact."
+        },
+        {
+          "chunk_id": "c90a4e50-36b2-5ba7-85aa-467fb583db26",
+          "page_number": 2,
+          "section_heading": "RESULTS",
+          "text": "RESULTS\n\nTen healthy volunteers completed the walking protocol. Mean step-count error was 3.2\npercent, and measured battery life was 6 hours."
+        }
+      ],
+      "display_title": "Wearable Rehabilitation Prototype",
+      "document_id": "af9b1f25-2aa2-5797-b41f-cc986f0f6204",
+      "file_name": "wearable_rehabilitation.pdf",
+      "sha256": "3e2e1b334040667894ab9b33f44b59719c9aa620f4b8dd8a25675d42db22f86b"
+    },
+    {
+      "chunks": [
+        {
+          "chunk_id": "2110eaae-7646-5ec9-8a88-ddb0ce2b98db",
+          "page_number": 1,
+          "section_heading": "SAFETY",
+          "text": "SAFETY\n\nThe device is intended for supervised rehabilitation research and is not a diagnostic device.\nStop use if skin irritation or pain occurs."
+        },
+        {
+          "chunk_id": "dd1f62c2-841d-5afd-9aef-deeb0a56f178",
+          "page_number": 2,
+          "section_heading": "CALIBRATION",
+          "text": "CALIBRATION\n\nCalibrate the IMU while stationary for 10 seconds. Zero the force-sensitive resistor with no\nload before each session."
+        }
+      ],
+      "display_title": "Rehabilitation Device Safety Guidance",
+      "document_id": "3e2c998b-7a69-5ad2-9efe-a2e5b010cba7",
+      "file_name": "rehabilitation_safety.pdf",
+      "sha256": "77fcf80c61785f6aeb7bba3b1d4aac4579323888a0e35d989c97e68ffe58e4bb"
+    },
+    {
+      "chunks": [
+        {
+          "chunk_id": "a9846820-f923-55e3-aa20-fcdeaea439a8",
+          "page_number": 1,
+          "section_heading": "DESIGN",
+          "text": "DESIGN\n\nThe low-power prototype sampled IMU motion at 50 Hz to reduce energy use. The report\ndoes not evaluate diagnostic performance."
+        }
+      ],
+      "display_title": "Low-Power Gait Sensor Prototype",
+      "document_id": "9de48caf-4dde-543b-ae33-f944bcf68e75",
+      "file_name": "low_power_sensor.pdf",
+      "sha256": "e23d008e87cd7d3782e97c11cffa81ffab0311fc56510f7aac724a071a06420f"
+    }
+  ]
+}

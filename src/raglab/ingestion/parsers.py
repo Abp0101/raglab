@@ -7,7 +7,7 @@ from collections.abc import Mapping
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
-from uuid import uuid4
+from uuid import uuid5
 
 import pymupdf
 
@@ -141,7 +141,9 @@ class PyMuPDFParser:
             part.strip() for part in author.replace(";", ",").split(",") if part.strip()
         )
         return Document(
-            document_id=uuid4(),
+            document_id=uuid5(
+                document_input.collection_id, hashlib.sha256(document_input.content).hexdigest()
+            ),
             collection_id=document_input.collection_id,
             file_name=document_input.file_name,
             display_title=title,

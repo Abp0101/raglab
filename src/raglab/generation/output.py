@@ -18,7 +18,7 @@ class GroundedAnswer(RAGLabModel):
     """Provider output contract validated before it reaches API consumers."""
 
     answer: str = Field(min_length=1)
-    citations: tuple[GeneratedCitation, ...] = ()
+    citations: tuple[GeneratedCitation, ...]
     evidence_status: EvidenceStatus
     confidence: float = Field(ge=0, le=1)
     warnings: tuple[str, ...] = ()

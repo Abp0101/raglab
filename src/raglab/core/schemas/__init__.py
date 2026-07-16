@@ -22,10 +22,16 @@ from raglab.core.schemas.documents import (
     TextSpan,
 )
 from raglab.core.schemas.evaluation import (
+    EvaluationDataset,
+    EvaluationDatasetManifest,
     EvaluationDifficulty,
+    EvaluationMetricAggregate,
     EvaluationMetricResult,
     EvaluationQuestion,
+    EvaluationReport,
     EvaluationResult,
+    EvaluationRun,
+    EvaluationRunConfig,
 )
 from raglab.core.schemas.health import HealthResponse, ReadinessResponse
 from raglab.core.schemas.query import (
@@ -61,10 +67,16 @@ __all__ = [
     "DocumentPage",
     "DocumentStatus",
     "Embedding",
+    "EvaluationDataset",
+    "EvaluationDatasetManifest",
     "EvaluationDifficulty",
+    "EvaluationMetricAggregate",
     "EvaluationMetricResult",
     "EvaluationQuestion",
+    "EvaluationReport",
     "EvaluationResult",
+    "EvaluationRun",
+    "EvaluationRunConfig",
     "EvidenceStatus",
     "FrameworkName",
     "GenerationRequest",

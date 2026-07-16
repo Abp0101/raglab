@@ -1,0 +1,15 @@
+{
+  "collection_id": "fa9cc0a3-0a57-596f-86d4-7ed2a2640d89",
+  "description": "Small synthetic corpus for deterministic RAG harness validation; not a clinical or real-world performance benchmark.",
+  "domains": [
+    "biomedical-engineering",
+    "wearable-sensors",
+    "rag-safety"
+  ],
+  "license": "CC0-1.0",
+  "name": "raglab-synthetic-biomedical-technical",
+  "published_on": "2026-07-16",
+  "question_count": 7,
+  "questions_sha256": "9987baf611926beb99ba2cffd86a2d0bfa0e3091b6fb3d67e189628d79f5ae7f",
+  "version": "1.0.0"
+}

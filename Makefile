@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking smoke-ollama smoke-api check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking build-evaluation-dataset seed-evaluation evaluate smoke-ollama smoke-api check run infra-up infra-down
 
 PYTHON ?= python3.12
 VENV := .venv
@@ -31,6 +31,15 @@ test-live-model:
 
 benchmark-chunking:
 	$(BIN)/python scripts/benchmark_chunking.py
+
+build-evaluation-dataset:
+	$(BIN)/python scripts/build_evaluation_dataset.py
+
+seed-evaluation:
+	$(BIN)/python scripts/seed_evaluation.py
+
+evaluate:
+	$(BIN)/python scripts/run_evaluation.py --model $(RAGLAB_LLM_MODEL)
 
 smoke-ollama:
 	$(BIN)/python scripts/smoke_ollama.py --model $(RAGLAB_LLM_MODEL)

@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains the project foundation, shared contracts, persistent ingestion, chunking, retrieval, the first complete **framework-free custom RAG pipeline**, and its typed collection, document, pipeline-discovery, and query API. Framework integrations are not implemented yet.
+The current repository contains the project foundation, shared contracts, persistent ingestion, chunking, retrieval, the first complete **framework-free custom RAG pipeline**, its typed API, and a deterministic local evaluation harness. Framework integrations are not implemented yet.
 
 ## Foundation features
 
@@ -35,6 +35,8 @@ The current repository contains the project foundation, shared contracts, persis
 - Server-Sent Event query progress with citation-validated terminal answers
 - Stable safe-error envelopes for validation, missing resources, unavailable frameworks, and providers
 - A runtime guard that disables metered OpenAI-compatible generation unless explicitly opted in
+- A checksum-verified synthetic biomedical/technical dataset with reproducible document/chunk IDs
+- Deterministic retrieval, citation, refusal, key-fact, latency, and zero-cost evaluation reports
 
 ## Quick start
 
@@ -65,6 +67,9 @@ make test         # run tests with branch coverage
 make test-integration # test PostgreSQL, Qdrant, and Redis adapters
 make test-live-model  # download/load and verify the default embedding model
 make benchmark-chunking # compare chunk structure without claiming a winner
+make build-evaluation-dataset # rebuild byte-stable synthetic PDFs and annotations
+make seed-evaluation # idempotently ingest the evaluation corpus locally
+make evaluate RAGLAB_LLM_MODEL=llama3.2:latest # write local JSON/Markdown reports
 make smoke-ollama RAGLAB_LLM_MODEL=llama3.2:latest # verify local structured generation
 make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest # exercise the complete local API path
 make check        # run all local quality gates
@@ -174,12 +179,18 @@ FastAPI exposes collection creation and listing, bounded multipart PDF ingestion
 
 The supported default path is fully local: Ollama generation, Sentence Transformers embeddings, cross-encoder reranking, PostgreSQL, Qdrant, and Redis. `RAGLAB_ALLOW_PAID_API_USAGE=false` blocks construction of the OpenAI-compatible adapter even if someone changes the provider name. Its implementation remains for portfolio completeness and is tested only with mocked HTTP; RAGLab development, tests, demos, and evaluation must not invoke metered APIs.
 
+### Evaluation harness
+
+The first versioned dataset is a small synthetic harness-validation corpus covering wearable sensors, rehabilitation safety, conflicting evidence, and refusal. The loader verifies its checksum and annotations before a run. Reports record the full configuration and compute deterministic retrieval, citation, refusal, lexical key-fact, latency, and cost measurements. Metric formulas, reproducibility rules, limitations, and the testing strategy are documented in [`docs/evaluation-methodology.md`](docs/evaluation-methodology.md).
+
+The first measured custom baseline is recorded in [`reports/baselines/custom-hybrid-reranked-llama3.2-v1.md`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md). It includes the observed over-citation and failed unanswerable case; it is not presented as a framework ranking.
+
 ## Roadmap
 
-1. Evaluation dataset, deterministic retrieval/citation metrics, and reports
+1. LangChain RAG adapter and first controlled cross-implementation comparison
 2. Distributed job leases, pagination, deletion, and authentication
-3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
+3. LangGraph, LlamaIndex, and Haystack adapters
 4. Observability and failure-path integration hardening
 5. Next.js inspection and evaluation UI
 
-Benchmark tables will be added only after the evaluation dataset and pipelines have been run. No performance claims are made at this stage.
+Cross-framework comparison tables will be added only after multiple implementations have run the exact same versioned dataset and configuration. The current single custom baseline supports no framework-superiority claim.

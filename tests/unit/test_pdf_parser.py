@@ -52,6 +52,22 @@ async def test_parser_extracts_pages_metadata_and_headings() -> None:
 
 
 @pytest.mark.asyncio
+async def test_parser_document_identity_is_deterministic_within_collection() -> None:
+    parser = PyMuPDFParser(PdfUploadValidator(max_size_bytes=1_000_000), max_pages=10)
+    collection_id = uuid4()
+    document = DocumentInput(
+        file_name="wearable-study.pdf",
+        content=make_pdf(),
+        collection_id=collection_id,
+    )
+
+    first = await parser.parse(document)
+    second = await parser.parse(document)
+
+    assert first.document.document_id == second.document.document_id
+
+
+@pytest.mark.asyncio
 async def test_parser_rejects_structurally_invalid_pdf() -> None:
     parser = PyMuPDFParser(PdfUploadValidator(max_size_bytes=1_000), max_pages=10)
 
