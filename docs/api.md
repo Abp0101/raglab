@@ -12,14 +12,17 @@ RAGLab exposes one framework-neutral FastAPI surface. The current endpoints are 
 | `GET` | `/collections` | List collections and document counts |
 | `GET` | `/collections/{collection_id}` | Fetch one collection |
 | `POST` | `/collections/{collection_id}/documents` | Upload and ingest a text PDF |
+| `POST` | `/collections/{collection_id}/ingestion-jobs` | Persist a PDF and enqueue local ingestion |
+| `GET` | `/ingestion-jobs/{job_id}` | Poll queued, processing, completed, or failed state |
 | `GET` | `/collections/{collection_id}/documents` | List document metadata |
 | `GET` | `/documents/{document_id}` | Fetch one document record |
 | `GET` | `/pipelines` | Discover implemented and planned frameworks |
 | `POST` | `/query` | Run the selected shared RAG contract |
+| `POST` | `/query/stream` | Stream safe lifecycle events and one validated result over SSE |
 
 Interactive request and response schemas are available at `/docs` when the API is running.
 
-With the local services migrated and an Ollama model already installed, `make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest` exercises collection creation, PDF ingestion, retrieval, reranking, local generation, citation validation, and temporary-data cleanup through the real application service graph.
+With the local services migrated and an Ollama model already installed, `make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest` exercises collection creation, durable background ingestion and polling, retrieval, reranking, safe SSE delivery, local generation, citation validation, and temporary-data cleanup through the real application service graph.
 
 ## Minimal local flow
 
@@ -43,6 +46,23 @@ curl -X POST http://localhost:8000/query \
 
 Only `custom` is currently executable. `/pipelines` returns all five target framework names and marks unimplemented adapters unavailable. Selecting an unavailable implementation returns HTTP 501.
 
+## Background ingestion
+
+The background endpoint stores the bounded upload in PostgreSQL before returning HTTP 202. A concurrency-limited local runner claims queued work and records a terminal `completed` or `failed` result. Source bytes are cleared from the job record at either terminal state. On graceful shutdown, active work is moved back to `queued`; startup resumes queued and interrupted jobs.
+
+The runner is intentionally local and defaults to one concurrent ingestion. This milestone supports a single Uvicorn worker. A later deployment milestone should introduce leases or a dedicated Redis-backed worker queue before enabling multiple API workers, because process-local task ownership is not a distributed scheduler.
+
+## Safe query streaming
+
+`POST /query/stream` uses Server-Sent Events with these event names:
+
+- `query.accepted` — the request passed synchronous collection/framework validation;
+- `query.heartbeat` — local retrieval, reranking, or generation is still running;
+- `query.result` — one complete shared `RAGResponse` after citation and refusal validation;
+- `query.error` — a safe error envelope after the stream has opened.
+
+RAGLab deliberately does not stream raw model tokens. Structured output, citation checking, and insufficient-evidence refusal happen before answer text reaches the client; streaming unvalidated tokens would bypass that safety boundary. Client disconnects cancel the in-flight query task.
+
 ## Upload and failure behavior
 
 Uploads are read only up to the configured size limit plus one byte, then pass through signature, extension, encryption, page-count, and extractable-text validation. Uploaded bytes are not stored as filesystem paths.
@@ -62,4 +82,4 @@ Validation failures return 422, missing resources 404, unavailable framework ada
 
 ## Current boundary
 
-Streaming, background ingestion jobs, cancellation, pagination, authentication, and deletion with coordinated multi-store cleanup are deliberately deferred. The API does not present a fake streaming interface over a non-streaming provider; native streaming will be added as a separate capability with explicit event contracts.
+Pagination, authentication, distributed job leases, and deletion with coordinated multi-store cleanup are deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.

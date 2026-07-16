@@ -31,6 +31,8 @@ The current repository contains the project foundation, shared contracts, persis
 - OpenAI-compatible and Ollama generation providers with structured usage and optional cost data
 - Grounded structured answers, deterministic citation checks, prompt-injection boundaries, and refusal rules
 - Collection creation, bounded PDF upload, document listing, pipeline discovery, and shared query endpoints
+- Durable background-ingestion jobs with bounded local concurrency and restart recovery
+- Server-Sent Event query progress with citation-validated terminal answers
 - Stable safe-error envelopes for validation, missing resources, unavailable frameworks, and providers
 - A runtime guard that disables metered OpenAI-compatible generation unless explicitly opted in
 
@@ -82,6 +84,7 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 | `RAGLAB_CORS_ORIGINS` | JSON array of allowed web origins | `["http://localhost:3000"]` |
 | `RAGLAB_MAX_UPLOAD_SIZE_MB` | Maximum accepted PDF size | `25` |
 | `RAGLAB_MAX_PDF_PAGES` | Maximum pages processed per PDF | `500` |
+| `RAGLAB_INGESTION_CONCURRENCY` | Maximum local background ingestions | `1` |
 | `RAGLAB_EMBEDDING_MODEL` | Local Sentence Transformers model | `sentence-transformers/all-MiniLM-L6-v2` |
 | `RAGLAB_EMBEDDING_BATCH_SIZE` | Local embedding batch size | `32` |
 | `RAGLAB_RERANKER_MODEL` | Local cross-encoder reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
@@ -165,7 +168,7 @@ The custom pipeline builds bounded untrusted context, asks the selected provider
 
 ### HTTP API
 
-FastAPI now exposes collection creation and listing, bounded multipart PDF ingestion, document metadata, pipeline capability discovery, and the shared query contract. Endpoint examples, status mappings, and deliberately deferred streaming/background behavior are documented in [`docs/api.md`](docs/api.md).
+FastAPI exposes collection creation and listing, bounded multipart PDF ingestion, durable background jobs, document metadata, pipeline capability discovery, synchronous querying, and safe SSE query progress. Endpoint examples, job semantics, event names, and status mappings are documented in [`docs/api.md`](docs/api.md).
 
 ### Zero paid API policy
 
@@ -173,8 +176,8 @@ The supported default path is fully local: Ollama generation, Sentence Transform
 
 ## Roadmap
 
-1. Native query streaming and background ingestion job contracts
-2. Evaluation dataset, deterministic retrieval/citation metrics, and reports
+1. Evaluation dataset, deterministic retrieval/citation metrics, and reports
+2. Distributed job leases, pagination, deletion, and authentication
 3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
 4. Observability and failure-path integration hardening
 5. Next.js inspection and evaluation UI

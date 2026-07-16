@@ -17,6 +17,7 @@ from raglab.core.schemas import (
     EvaluationQuestion,
     GenerationRequest,
     GenerationResult,
+    IngestionJob,
     IngestionResult,
     ParsedDocument,
     PipelineCapabilities,
@@ -41,6 +42,38 @@ class CatalogRepository(Protocol):
     async def list_documents(self, collection_id: UUID) -> Sequence[Document]: ...
 
     async def get_document(self, document_id: UUID) -> Document: ...
+
+
+@runtime_checkable
+class IngestionJobRepository(Protocol):
+    """Persist queued uploads and their lifecycle independently of API processes."""
+
+    async def create(self, document: DocumentInput) -> IngestionJob: ...
+
+    async def get(self, job_id: UUID) -> IngestionJob: ...
+
+    async def list_recoverable(self) -> Sequence[UUID]: ...
+
+    async def claim(self, job_id: UUID) -> DocumentInput | None: ...
+
+    async def complete(self, job_id: UUID, result: IngestionResult) -> None: ...
+
+    async def fail(self, job_id: UUID, error_type: str, message: str) -> None: ...
+
+    async def requeue(self, job_id: UUID) -> None: ...
+
+
+@runtime_checkable
+class IngestionJobManager(Protocol):
+    """Submit, inspect, recover, and stop background ingestion work."""
+
+    async def start(self) -> None: ...
+
+    async def submit(self, document: DocumentInput) -> IngestionJob: ...
+
+    async def get(self, job_id: UUID) -> IngestionJob: ...
+
+    async def close(self) -> None: ...
 
 
 @runtime_checkable

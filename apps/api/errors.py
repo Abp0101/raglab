@@ -9,6 +9,7 @@ from raglab.core.exceptions import (
     DocumentParsingError,
     DocumentValidationError,
     DuplicateDocumentError,
+    IngestionJobNotFoundError,
     MalformedProviderResponseError,
     PaidProviderDisabledError,
     ProviderUnavailableError,
@@ -22,16 +23,16 @@ def register_exception_handlers(application: FastAPI) -> None:
 
     async def handle_expected(_: Request, error: Exception) -> JSONResponse:
         code = _status_code(error)
-        return JSONResponse(
-            status_code=code,
-            content={"error": {"type": _error_type(error), "message": str(error)}},
-        )
+        return JSONResponse(status_code=code, content=public_error_payload(error))
 
     application.add_exception_handler(RAGLabError, handle_expected)
 
 
 def _status_code(error: Exception) -> int:
-    if isinstance(error, (CollectionNotFoundError, DocumentNotFoundError)):
+    if isinstance(
+        error,
+        (CollectionNotFoundError, DocumentNotFoundError, IngestionJobNotFoundError),
+    ):
         return status.HTTP_404_NOT_FOUND
     if isinstance(error, DuplicateDocumentError):
         return status.HTTP_409_CONFLICT
@@ -51,3 +52,14 @@ def _status_code(error: Exception) -> int:
 def _error_type(error: Exception) -> str:
     name = type(error).__name__
     return name.removesuffix("Error")
+
+
+def public_error_payload(error: Exception) -> dict[str, dict[str, str]]:
+    """Build the same safe error envelope for HTTP and already-open SSE responses."""
+    if isinstance(error, RAGLabError):
+        error_type = _error_type(error)
+        message = str(error)
+    else:
+        error_type = "Internal"
+        message = "request processing failed"
+    return {"error": {"type": error_type, "message": message}}

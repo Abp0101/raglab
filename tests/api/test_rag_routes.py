@@ -16,6 +16,8 @@ from raglab.core.schemas import (
     DocumentStatus,
     EvidenceStatus,
     FrameworkName,
+    IngestionJob,
+    IngestionJobStatus,
     IngestionResult,
     LatencyMetrics,
     PipelineCapabilities,
@@ -118,12 +120,40 @@ class StubPipeline:
         )
 
 
+class MemoryJobManager:
+    def __init__(self) -> None:
+        self.jobs: dict[UUID, IngestionJob] = {}
+
+    async def start(self) -> None:
+        return None
+
+    async def submit(self, document: DocumentInput) -> IngestionJob:
+        now = datetime.now(UTC)
+        job = IngestionJob(
+            job_id=uuid4(),
+            collection_id=document.collection_id,
+            file_name=document.file_name,
+            status=IngestionJobStatus.QUEUED,
+            created_at=now,
+            updated_at=now,
+        )
+        self.jobs[job.job_id] = job
+        return job
+
+    async def get(self, job_id: UUID) -> IngestionJob:
+        return self.jobs[job_id]
+
+    async def close(self) -> None:
+        return None
+
+
 def make_client() -> tuple[TestClient, MemoryCatalog, StubPipeline]:
     catalog = MemoryCatalog()
     pipeline = StubPipeline()
     services = ApiServices(
         catalog=catalog,
         pipelines=PipelineRegistry({FrameworkName.CUSTOM: pipeline}),
+        ingestion_jobs=MemoryJobManager(),
         readiness_probe=StubReadinessProbe(),
     )
     app = create_app(Settings(environment="test", _env_file=None), services=services)
@@ -163,6 +193,23 @@ def test_pdf_upload_uses_registered_custom_pipeline() -> None:
     assert pipeline.ingested[0].collection_id in catalog.collections
 
 
+def test_background_upload_returns_pollable_durable_job_contract() -> None:
+    client, _, _ = make_client()
+
+    with client:
+        collection = client.post("/collections", json={"name": "Async papers"}).json()
+        accepted = client.post(
+            f"/collections/{collection['collection_id']}/ingestion-jobs",
+            files={"file": ("paper.pdf", b"%PDF-1.7\nlocal-test", "application/pdf")},
+        )
+        polled = client.get(f"/ingestion-jobs/{accepted.json()['job_id']}")
+
+    assert accepted.status_code == 202
+    assert accepted.json()["status"] == "queued"
+    assert polled.status_code == 200
+    assert polled.json()["file_name"] == "paper.pdf"
+
+
 def test_query_and_pipeline_discovery_use_shared_contracts() -> None:
     client, _, pipeline = make_client()
 
@@ -192,6 +239,27 @@ def test_query_and_pipeline_discovery_use_shared_contracts() -> None:
     assert response.json()["answer"] == "A grounded local answer."
     assert response.json()["estimated_cost"] is None
     assert pipeline.queries[0].framework is FrameworkName.CUSTOM
+
+
+def test_stream_query_emits_lifecycle_then_only_validated_result() -> None:
+    client, _, _ = make_client()
+
+    with client:
+        collection = client.post("/collections", json={"name": "Streaming"}).json()
+        response = client.post(
+            "/query/stream",
+            json={
+                "query": "What does the evidence show?",
+                "framework": "custom",
+                "collection_id": collection["collection_id"],
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert "event: query.accepted" in response.text
+    assert "event: query.result" in response.text
+    assert "A grounded local answer." in response.text
 
 
 def test_expected_domain_error_has_stable_public_shape() -> None:

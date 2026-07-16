@@ -13,16 +13,20 @@ from raglab.core.schemas import (
     Chunk,
     CollectionCreate,
     Document,
+    DocumentInput,
     DocumentMetadata,
     DocumentStatus,
     Embedding,
+    IngestionJobStatus,
+    IngestionResult,
     RetrievalRequest,
 )
-from raglab.database.models import CollectionRecord, DocumentRecord
+from raglab.database.models import CollectionRecord, DocumentRecord, IngestionJobRecord
 from raglab.database.repositories import (
     SQLAlchemyCatalogRepository,
     SQLAlchemyChunkRepository,
     SQLAlchemyDocumentRepository,
+    SQLAlchemyIngestionJobRepository,
 )
 from raglab.database.session import create_engine, create_session_factory
 from raglab.retrieval import (
@@ -55,6 +59,59 @@ async def test_collection_catalog_round_trip() -> None:
         assert fetched.name == "API integration"
         assert fetched.document_count == 0
         assert created.collection_id in {item.collection_id for item in listed}
+    finally:
+        if collection_id is not None:
+            with suppress(Exception):
+                async with sessions() as session, session.begin():
+                    await session.execute(
+                        delete(CollectionRecord).where(CollectionRecord.id == collection_id)
+                    )
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_persistent_ingestion_job_clears_upload_after_completion() -> None:
+    settings = Settings(_env_file=None)
+    engine = create_engine(settings.postgres_dsn)
+    sessions = create_session_factory(engine)
+    catalog = SQLAlchemyCatalogRepository(sessions)
+    jobs = SQLAlchemyIngestionJobRepository(sessions)
+    collection_id = None
+
+    try:
+        collection = await catalog.create_collection(CollectionCreate(name="Job integration"))
+        collection_id = collection.collection_id
+        queued = await jobs.create(
+            DocumentInput(
+                file_name="queued.pdf",
+                content=b"%PDF-integration",
+                collection_id=collection.collection_id,
+            )
+        )
+
+        claimed = await jobs.claim(queued.job_id)
+        assert claimed is not None
+        assert (await jobs.get(queued.job_id)).status is IngestionJobStatus.PROCESSING
+
+        result = IngestionResult(
+            document_id=uuid4(),
+            collection_id=collection.collection_id,
+            page_count=1,
+            chunk_count=1,
+            duration_ms=1,
+            parser="integration",
+            chunking_strategy="integration",
+            embedding_model="local",
+        )
+        await jobs.complete(queued.job_id, result)
+        completed = await jobs.get(queued.job_id)
+
+        assert completed.status is IngestionJobStatus.COMPLETED
+        assert completed.result == result
+        async with sessions() as session:
+            record = await session.get(IngestionJobRecord, queued.job_id)
+            assert record is not None
+            assert record.content is None
     finally:
         if collection_id is not None:
             with suppress(Exception):

@@ -8,17 +8,19 @@ from redis.asyncio import Redis
 from raglab.chunking.registry import create_chunker
 from raglab.core.config import Settings
 from raglab.core.health import InfrastructureReadinessProbe, ReadinessProbe
-from raglab.core.interfaces import CatalogRepository
+from raglab.core.interfaces import CatalogRepository, IngestionJobManager
 from raglab.core.schemas import ChunkingConfig, FrameworkName
 from raglab.database import (
     SQLAlchemyCatalogRepository,
     SQLAlchemyChunkRepository,
     SQLAlchemyDocumentRepository,
+    SQLAlchemyIngestionJobRepository,
     create_engine,
     create_session_factory,
 )
 from raglab.embeddings import SentenceTransformerEmbeddingProvider
 from raglab.generation.providers import create_llm_provider
+from raglab.ingestion import BackgroundIngestionManager
 from raglab.ingestion.parsers import PyMuPDFParser
 from raglab.ingestion.pipeline import DocumentIngestionPipeline
 from raglab.ingestion.validation import PdfUploadValidator
@@ -36,9 +38,11 @@ class ApiServices:
 
     catalog: CatalogRepository
     pipelines: PipelineRegistry
+    ingestion_jobs: IngestionJobManager
     readiness_probe: ReadinessProbe
 
     async def close(self) -> None:
+        await self.ingestion_jobs.close()
         await self.readiness_probe.close()
 
 
@@ -56,6 +60,7 @@ def build_api_services(settings: Settings) -> ApiServices:
     readiness = InfrastructureReadinessProbe(database=engine, qdrant=qdrant, redis=redis)
 
     catalog = SQLAlchemyCatalogRepository(sessions)
+    job_repository = SQLAlchemyIngestionJobRepository(sessions)
     documents = SQLAlchemyDocumentRepository(sessions)
     chunks = SQLAlchemyChunkRepository(sessions)
     validator = PdfUploadValidator(max_size_bytes=settings.max_upload_size_mb * 1024 * 1024)
@@ -95,5 +100,10 @@ def build_api_services(settings: Settings) -> ApiServices:
     return ApiServices(
         catalog=catalog,
         pipelines=PipelineRegistry({FrameworkName.CUSTOM: custom}),
+        ingestion_jobs=BackgroundIngestionManager(
+            job_repository,
+            custom,
+            max_concurrency=settings.ingestion_concurrency,
+        ),
         readiness_probe=readiness,
     )

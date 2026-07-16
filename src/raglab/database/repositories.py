@@ -13,17 +13,28 @@ from raglab.core.exceptions import (
     CollectionNotFoundError,
     DocumentNotFoundError,
     DuplicateDocumentError,
+    IngestionJobNotFoundError,
 )
 from raglab.core.schemas import (
     Chunk,
     Collection,
     CollectionCreate,
     Document,
+    DocumentInput,
     DocumentMetadata,
     DocumentStatus,
+    IngestionJob,
+    IngestionJobError,
+    IngestionJobStatus,
+    IngestionResult,
     TextSpan,
 )
-from raglab.database.models import ChunkRecord, CollectionRecord, DocumentRecord
+from raglab.database.models import (
+    ChunkRecord,
+    CollectionRecord,
+    DocumentRecord,
+    IngestionJobRecord,
+)
 
 
 class SQLAlchemyCatalogRepository:
@@ -90,6 +101,143 @@ class SQLAlchemyCatalogRepository:
         if record is None:
             raise DocumentNotFoundError(f"document {document_id} does not exist")
         return _to_document(record)
+
+
+class SQLAlchemyIngestionJobRepository:
+    """Persist upload bytes until a background ingestion job reaches a terminal state."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def create(self, document: DocumentInput) -> IngestionJob:
+        now = datetime.now(UTC)
+        record = IngestionJobRecord(
+            id=uuid4(),
+            collection_id=document.collection_id,
+            file_name=document.file_name,
+            display_title=document.display_title,
+            source_url=str(document.source_url) if document.source_url else None,
+            content=document.content,
+            status=IngestionJobStatus.QUEUED.value,
+            result=None,
+            error_type=None,
+            error_message=None,
+            created_at=now,
+            updated_at=now,
+        )
+        async with self._sessions() as session, session.begin():
+            session.add(record)
+            await session.flush()
+        return _to_ingestion_job(record)
+
+    async def get(self, job_id: UUID) -> IngestionJob:
+        async with self._sessions() as session:
+            record = await session.get(IngestionJobRecord, job_id)
+        if record is None:
+            raise IngestionJobNotFoundError(f"ingestion job {job_id} does not exist")
+        return _to_ingestion_job(record)
+
+    async def list_recoverable(self) -> Sequence[UUID]:
+        async with self._sessions() as session, session.begin():
+            records = (
+                await session.scalars(
+                    select(IngestionJobRecord)
+                    .where(
+                        IngestionJobRecord.status.in_(
+                            [
+                                IngestionJobStatus.QUEUED.value,
+                                IngestionJobStatus.PROCESSING.value,
+                            ]
+                        ),
+                        IngestionJobRecord.content.is_not(None),
+                    )
+                    .order_by(IngestionJobRecord.created_at, IngestionJobRecord.id)
+                    .with_for_update(skip_locked=True)
+                )
+            ).all()
+            now = datetime.now(UTC)
+            for record in records:
+                record.status = IngestionJobStatus.QUEUED.value
+                record.updated_at = now
+        return tuple(record.id for record in records)
+
+    async def claim(self, job_id: UUID) -> DocumentInput | None:
+        async with self._sessions() as session, session.begin():
+            record = await session.scalar(
+                select(IngestionJobRecord)
+                .where(IngestionJobRecord.id == job_id)
+                .with_for_update(skip_locked=True)
+            )
+            if (
+                record is None
+                or record.status != IngestionJobStatus.QUEUED.value
+                or record.content is None
+            ):
+                return None
+            record.status = IngestionJobStatus.PROCESSING.value
+            record.updated_at = datetime.now(UTC)
+            return DocumentInput(
+                file_name=record.file_name,
+                content=record.content,
+                collection_id=record.collection_id,
+                display_title=record.display_title,
+                source_url=record.source_url,
+            )
+
+    async def complete(self, job_id: UUID, result: IngestionResult) -> None:
+        await self._finish(
+            job_id,
+            status=IngestionJobStatus.COMPLETED,
+            result=result.model_dump(mode="json"),
+        )
+
+    async def fail(self, job_id: UUID, error_type: str, message: str) -> None:
+        await self._finish(
+            job_id,
+            status=IngestionJobStatus.FAILED,
+            error_type=error_type,
+            error_message=message,
+        )
+
+    async def requeue(self, job_id: UUID) -> None:
+        async with self._sessions() as session, session.begin():
+            await session.execute(
+                update(IngestionJobRecord)
+                .where(
+                    IngestionJobRecord.id == job_id,
+                    IngestionJobRecord.status == IngestionJobStatus.PROCESSING.value,
+                )
+                .values(
+                    status=IngestionJobStatus.QUEUED.value,
+                    updated_at=datetime.now(UTC),
+                )
+            )
+
+    async def _finish(
+        self,
+        job_id: UUID,
+        *,
+        status: IngestionJobStatus,
+        result: dict[str, object] | None = None,
+        error_type: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        async with self._sessions() as session, session.begin():
+            updated_id = await session.scalar(
+                update(IngestionJobRecord)
+                .where(IngestionJobRecord.id == job_id)
+                .values(
+                    status=status.value,
+                    result=result,
+                    error_type=error_type,
+                    error_message=error_message,
+                    content=None,
+                    updated_at=datetime.now(UTC),
+                )
+                .returning(IngestionJobRecord.id)
+            )
+            if updated_id is None:
+                raise IngestionJobNotFoundError(f"ingestion job {job_id} does not exist")
 
 
 class SQLAlchemyDocumentRepository:
@@ -188,6 +336,23 @@ def _to_collection(record: CollectionRecord, *, document_count: int) -> Collecti
         created_at=record.created_at,
         updated_at=record.updated_at,
         document_count=document_count,
+    )
+
+
+def _to_ingestion_job(record: IngestionJobRecord) -> IngestionJob:
+    return IngestionJob(
+        job_id=record.id,
+        collection_id=record.collection_id,
+        file_name=record.file_name,
+        status=IngestionJobStatus(record.status),
+        created_at=record.created_at,
+        updated_at=record.updated_at,
+        result=(IngestionResult.model_validate(record.result) if record.result else None),
+        error=(
+            IngestionJobError(type=record.error_type, message=record.error_message)
+            if record.error_type and record.error_message
+            else None
+        ),
     )
 
 

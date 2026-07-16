@@ -12,6 +12,7 @@ def test_settings_have_local_defaults() -> None:
     assert str(settings.redis_dsn) == "redis://localhost:6379/0"
     assert settings.llm_provider == "ollama"
     assert settings.allow_paid_api_usage is False
+    assert settings.ingestion_concurrency == 1
 
 
 def test_settings_load_prefixed_environment(monkeypatch: pytest.MonkeyPatch) -> None:

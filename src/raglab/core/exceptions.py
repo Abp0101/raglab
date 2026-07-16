@@ -25,6 +25,10 @@ class DocumentNotFoundError(RAGLabError):
     """The requested document does not exist."""
 
 
+class IngestionJobNotFoundError(RAGLabError):
+    """The requested background ingestion job does not exist."""
+
+
 class PaidProviderDisabledError(RAGLabError):
     """A metered remote provider was selected without an explicit safety opt-in."""
 

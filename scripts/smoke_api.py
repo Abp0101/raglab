@@ -2,8 +2,10 @@
 
 import argparse
 import asyncio
+import json
+import time
 from contextlib import suppress
-from typing import cast
+from typing import Any, cast
 from uuid import UUID
 
 import pymupdf
@@ -95,15 +97,27 @@ def main() -> None:
             collection_id = UUID(collection_response.json()["collection_id"])
 
             ingestion_response = client.post(
-                f"/collections/{collection_id}/documents",
+                f"/collections/{collection_id}/ingestion-jobs",
                 files={"file": ("wearable-study.pdf", _pdf_bytes(), "application/pdf")},
             )
             ingestion_response.raise_for_status()
-            ingestion = ingestion_response.json()
-            document_id = UUID(ingestion["document_id"])
+            job_id = ingestion_response.json()["job_id"]
+            deadline = time.monotonic() + 300
+            while time.monotonic() < deadline:
+                job_response = client.get(f"/ingestion-jobs/{job_id}")
+                job_response.raise_for_status()
+                job = job_response.json()
+                if job["status"] == "completed":
+                    document_id = UUID(job["result"]["document_id"])
+                    break
+                if job["status"] == "failed":
+                    raise RuntimeError(f"background ingestion failed: {job['error']}")
+                time.sleep(0.25)
+            else:
+                raise TimeoutError("background ingestion did not finish within 300 seconds")
 
             query_response = client.post(
-                "/query",
+                "/query/stream",
                 json={
                     "query": "At what rate did the prototype sample IMU motion?",
                     "framework": "custom",
@@ -112,7 +126,7 @@ def main() -> None:
                 },
             )
             query_response.raise_for_status()
-            answer = query_response.json()
+            answer = _sse_result(query_response.text)
             if answer["estimated_cost"] != 0.0:
                 raise RuntimeError("local Ollama smoke test must report zero API cost")
             print(
@@ -122,6 +136,16 @@ def main() -> None:
     finally:
         if collection_id is not None:
             asyncio.run(_cleanup(settings, collection_id, document_id))
+
+
+def _sse_result(body: str) -> dict[str, Any]:
+    event = ""
+    for line in body.splitlines():
+        if line.startswith("event: "):
+            event = line.removeprefix("event: ")
+        elif event == "query.result" and line.startswith("data: "):
+            return cast(dict[str, Any], json.loads(line.removeprefix("data: ")))
+    raise RuntimeError("stream did not contain a query.result event")
 
 
 if __name__ == "__main__":

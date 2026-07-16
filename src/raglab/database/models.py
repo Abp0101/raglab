@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from uuid import UUID
 
-from sqlalchemy import Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text
+from sqlalchemy import JSON, Date, DateTime, ForeignKey, Index, Integer, LargeBinary, String, Text
 from sqlalchemy import Uuid as SQLUuid
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -88,3 +88,23 @@ class ChunkRecord(TimestampMixin, Base):
     text_end: Mapped[int | None] = mapped_column(Integer(), nullable=True)
     text_sha256: Mapped[bytes] = mapped_column(LargeBinary(32))
     document: Mapped[DocumentRecord] = relationship(back_populates="chunks")
+
+
+class IngestionJobRecord(TimestampMixin, Base):
+    """Durable queued upload, cleared of source bytes after terminal completion."""
+
+    __tablename__ = "ingestion_jobs"
+    __table_args__ = (Index("ix_ingestion_jobs_collection_status", "collection_id", "status"),)
+
+    id: Mapped[UUID] = mapped_column(SQLUuid(), primary_key=True)
+    collection_id: Mapped[UUID] = mapped_column(
+        SQLUuid(), ForeignKey("collections.id", ondelete="CASCADE"), index=True
+    )
+    file_name: Mapped[str] = mapped_column(String(255))
+    display_title: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(Text(), nullable=True)
+    content: Mapped[bytes | None] = mapped_column(LargeBinary(), nullable=True)
+    status: Mapped[str] = mapped_column(String(32))
+    result: Mapped[dict[str, object] | None] = mapped_column(JSON(), nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)

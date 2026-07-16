@@ -64,6 +64,7 @@ class CustomRAGPipeline:
             hybrid_retrieval=True,
             reranking=True,
             metadata_filtering=True,
+            streaming=True,
         )
 
     async def ingest(self, documents: Sequence[DocumentInput]) -> Sequence[IngestionResult]:

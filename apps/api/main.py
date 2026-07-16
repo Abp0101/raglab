@@ -35,7 +35,9 @@ def create_app(
         application.state.readiness_probe = probe
         application.state.catalog_repository = runtime.catalog
         application.state.pipeline_registry = runtime.pipelines
+        application.state.ingestion_job_manager = runtime.ingestion_jobs
         try:
+            await runtime.ingestion_jobs.start()
             yield
         finally:
             await runtime.close()

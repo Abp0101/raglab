@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     max_upload_size_mb: int = Field(default=25, ge=1, le=250)
     max_pdf_pages: int = Field(default=500, ge=1, le=5000)
+    ingestion_concurrency: int = Field(default=1, ge=1, le=8)
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_batch_size: int = Field(default=32, ge=1, le=512)
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"

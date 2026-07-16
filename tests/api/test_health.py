@@ -1,9 +1,11 @@
 from collections.abc import Mapping
 
 from apps.api.main import create_app
+from apps.api.runtime import ApiServices
 from fastapi.testclient import TestClient
 
 from raglab.core.config import Settings
+from raglab.pipelines import PipelineRegistry
 
 
 class StubReadinessProbe:
@@ -18,9 +20,23 @@ class StubReadinessProbe:
         self.closed = True
 
 
+class NoopJobManager:
+    async def start(self) -> None:
+        return None
+
+    async def close(self) -> None:
+        return None
+
+
 def make_client(probe: StubReadinessProbe) -> TestClient:
     settings = Settings(environment="test", _env_file=None)
-    return TestClient(create_app(settings=settings, readiness_probe=probe))
+    services = ApiServices(
+        catalog=None,  # type: ignore[arg-type]
+        pipelines=PipelineRegistry({}),
+        ingestion_jobs=NoopJobManager(),  # type: ignore[arg-type]
+        readiness_probe=probe,
+    )
+    return TestClient(create_app(settings=settings, services=services))
 
 
 def test_liveness_does_not_require_infrastructure() -> None:

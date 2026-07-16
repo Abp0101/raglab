@@ -191,3 +191,32 @@ class IngestionResult(RAGLabModel):
     duplicate: bool = False
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+
+class IngestionJobStatus(StrEnum):
+    """Persistent lifecycle state for an asynchronous ingestion request."""
+
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class IngestionJobError(RAGLabModel):
+    """Safe failure details retained for background-job polling."""
+
+    type: str = Field(min_length=1, max_length=100)
+    message: str = Field(min_length=1, max_length=1000)
+
+
+class IngestionJob(RAGLabModel):
+    """Public state of a durable background ingestion job."""
+
+    job_id: UUID
+    collection_id: UUID
+    file_name: str = Field(min_length=1, max_length=255)
+    status: IngestionJobStatus
+    created_at: datetime
+    updated_at: datetime
+    result: IngestionResult | None = None
+    error: IngestionJobError | None = None
