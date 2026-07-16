@@ -13,6 +13,7 @@ from raglab.core.schemas import (
     MetadataFilter,
     PipelineConfig,
     QueryRequest,
+    RetrievalOptions,
     TextSpan,
     UsageMetrics,
 )
@@ -91,6 +92,16 @@ def test_pipeline_config_requires_enough_candidates() -> None:
 def test_metadata_filter_rejects_reversed_date_range() -> None:
     with pytest.raises(ValidationError, match="published_from"):
         MetadataFilter(published_from=date(2025, 2, 1), published_to=date(2025, 1, 1))
+
+
+def test_metadata_filter_rejects_unsupported_attribute() -> None:
+    with pytest.raises(ValidationError, match="unsupported metadata attributes"):
+        MetadataFilter(attributes={"secret_field": "value"})
+
+
+def test_retrieval_options_require_enough_candidates() -> None:
+    with pytest.raises(ValidationError, match="candidate_k"):
+        RetrievalOptions(candidate_k=3, top_k=5)
 
 
 def test_usage_requires_consistent_total_tokens() -> None:

@@ -60,6 +60,13 @@ class DocumentRepository(Protocol):
 
 
 @runtime_checkable
+class ChunkRepository(Protocol):
+    """Load context chunks from the relational source of truth."""
+
+    async def get_by_ids(self, chunk_ids: Sequence[UUID]) -> Sequence[Chunk]: ...
+
+
+@runtime_checkable
 class VectorIndexer(Protocol):
     """Store dense chunk vectors and retrieval metadata."""
 
@@ -117,6 +124,13 @@ class Reranker(Protocol):
         candidates: Sequence[RetrievedChunk],
         top_k: int,
     ) -> Sequence[RetrievedChunk]: ...
+
+
+@runtime_checkable
+class ContextExpander(Protocol):
+    """Replace retrieval units with larger linked context where available."""
+
+    async def expand(self, chunks: Sequence[RetrievedChunk]) -> Sequence[RetrievedChunk]: ...
 
 
 @runtime_checkable

@@ -1,5 +1,6 @@
 """Retrieval, generation, pipeline, citation, and response models."""
 
+import re
 from datetime import date
 from enum import StrEnum
 from typing import Any, Self
@@ -56,6 +57,38 @@ class MetadataFilter(RAGLabModel):
             and self.published_from > self.published_to
         ):
             raise ValueError("published_from must not be after published_to")
+        invalid_keys = [
+            key for key in self.attributes if not re.fullmatch(r"[a-z][a-z0-9_]{0,63}", key)
+        ]
+        if invalid_keys:
+            raise ValueError("metadata attribute names must be safe lowercase identifiers")
+        supported_attributes = {
+            "file_name",
+            "display_title",
+            "page_number",
+            "chunk_index",
+            "content_hash",
+        }
+        unsupported = set(self.attributes) - supported_attributes
+        if unsupported:
+            raise ValueError(f"unsupported metadata attributes: {', '.join(sorted(unsupported))}")
+        return self
+
+
+class RetrievalOptions(RAGLabModel):
+    """Execution controls for the framework-free retrieval service."""
+
+    mode: RetrievalMode = RetrievalMode.HYBRID
+    candidate_k: int = Field(default=20, ge=1, le=500)
+    top_k: int = Field(default=5, ge=1, le=100)
+    rerank: bool = True
+    expand_parents: bool = True
+    rrf_k: int = Field(default=60, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def candidates_cover_final_results(self) -> Self:
+        if self.candidate_k < self.top_k:
+            raise ValueError("candidate_k must be greater than or equal to top_k")
         return self
 
 

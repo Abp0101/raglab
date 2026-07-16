@@ -72,8 +72,14 @@ class DocumentIngestionPipeline:
 
         parsed = await self._parser.parse(document_input)
         chunks = tuple(self._chunker.chunk(parsed, self._chunking_config))
-        embeddings = tuple(await self._embedding_provider.embed_chunks(chunks))
-        if len(embeddings) != len(chunks):
+        parent_ids = {
+            chunk.metadata.parent_chunk_id
+            for chunk in chunks
+            if chunk.metadata.parent_chunk_id is not None
+        }
+        retrieval_chunks = tuple(chunk for chunk in chunks if chunk.chunk_id not in parent_ids)
+        embeddings = tuple(await self._embedding_provider.embed_chunks(retrieval_chunks))
+        if len(embeddings) != len(retrieval_chunks):
             raise ValueError("embedding provider must return one vector per chunk")
 
         processing_document = parsed.document.model_copy(
@@ -81,13 +87,13 @@ class DocumentIngestionPipeline:
         )
         await self._document_repository.save(processing_document, chunks)
         try:
-            await self._vector_indexer.upsert(chunks, embeddings)
-            await self._sparse_indexer.upsert(chunks)
+            await self._vector_indexer.upsert(retrieval_chunks, embeddings)
+            await self._sparse_indexer.upsert(retrieval_chunks)
             await self._document_repository.set_status(
                 processing_document.document_id, DocumentStatus.READY
             )
         except Exception:
-            await self._rollback(processing_document.document_id, chunks)
+            await self._rollback(processing_document.document_id, retrieval_chunks)
             raise
         ready_document = processing_document.model_copy(update={"status": DocumentStatus.READY})
         return IngestionResult(

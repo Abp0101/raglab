@@ -9,11 +9,23 @@ from redis.asyncio import Redis
 from sqlalchemy import delete, select
 
 from raglab.core.config import Settings
-from raglab.core.schemas import Chunk, Document, DocumentMetadata, DocumentStatus, Embedding
+from raglab.core.schemas import (
+    Chunk,
+    Document,
+    DocumentMetadata,
+    DocumentStatus,
+    Embedding,
+    RetrievalRequest,
+)
 from raglab.database.models import CollectionRecord, DocumentRecord
-from raglab.database.repositories import SQLAlchemyDocumentRepository
+from raglab.database.repositories import SQLAlchemyChunkRepository, SQLAlchemyDocumentRepository
 from raglab.database.session import create_engine, create_session_factory
-from raglab.retrieval import QdrantVectorIndexer, RedisBM25Indexer
+from raglab.retrieval import (
+    QdrantDenseRetriever,
+    QdrantVectorIndexer,
+    RedisBM25Indexer,
+    RedisBM25Retriever,
+)
 
 pytestmark = pytest.mark.integration
 
@@ -52,6 +64,7 @@ async def test_document_dense_and_sparse_stores_round_trip() -> None:
     engine = create_engine(settings.postgres_dsn)
     sessions = create_session_factory(engine)
     repository = SQLAlchemyDocumentRepository(sessions)
+    chunk_repository = SQLAlchemyChunkRepository(sessions)
     qdrant = AsyncQdrantClient(url=str(settings.qdrant_url), check_compatibility=False)
     collection_name = f"integration_{uuid4().hex}"
     vectors = QdrantVectorIndexer(qdrant, collection_name)
@@ -77,6 +90,8 @@ async def test_document_dense_and_sparse_stores_round_trip() -> None:
         found = await repository.find_by_hash(document.collection_id, document.content_hash)
         assert found is not None
         assert found.status is DocumentStatus.READY
+        loaded_chunks = await chunk_repository.get_by_ids([chunks[0].chunk_id])
+        assert loaded_chunks[0].text == chunks[0].text
 
         embedding = Embedding(
             chunk_id=chunks[0].chunk_id,
@@ -88,10 +103,19 @@ async def test_document_dense_and_sparse_stores_round_trip() -> None:
         points, _ = await qdrant.scroll(collection_name, limit=10, with_payload=True)
         assert points[0].payload is not None
         assert points[0].payload["document_id"] == str(document.document_id)
+        dense_results = await QdrantDenseRetriever(qdrant, collection_name).retrieve(
+            RetrievalRequest(query="sampling rate", collection_id=document.collection_id, top_k=1),
+            (0.1, 0.2, 0.3),
+        )
+        assert dense_results[0].chunk.chunk_id == chunks[0].chunk_id
 
         await sparse.upsert(chunks)
         redis_key = f"{key_prefix}:collection:{document.collection_id}:chunks"
         assert await redis.hlen(redis_key) == 1
+        sparse_results = await RedisBM25Retriever(redis, key_prefix=key_prefix).retrieve(
+            RetrievalRequest(query="sampled 100 Hz", collection_id=document.collection_id, top_k=1)
+        )
+        assert sparse_results[0].chunk.chunk_id == chunks[0].chunk_id
 
         await sparse.delete(chunks)
         await vectors.delete([chunks[0].chunk_id])

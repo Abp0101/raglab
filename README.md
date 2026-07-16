@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains the project foundation, shared contracts, persistent document ingestion, and the **Phase 4 chunking strategy suite**. It intentionally does not yet contain question answering or framework integrations.
+The current repository contains the project foundation, shared contracts, persistent ingestion, the chunking strategy suite, and the **Phase 5A framework-free retrieval baseline**. It intentionally does not yet contain answer generation or framework integrations.
 
 ## Foundation features
 
@@ -26,6 +26,8 @@ The current repository contains the project foundation, shared contracts, persis
 - Compensating cleanup when multi-store indexing fails, plus marked real-service integration tests
 - Fixed-token, recursive-character, section-aware, and parent-child chunking with deterministic provenance
 - A versioned structural chunking benchmark and generated-report workflow
+- Dense Qdrant, exact BM25, and hybrid Reciprocal Rank Fusion retrieval with shared filters
+- Optional local cross-encoder reranking and deduplicated parent-context expansion
 
 ## Quick start
 
@@ -75,6 +77,8 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 | `RAGLAB_MAX_PDF_PAGES` | Maximum pages processed per PDF | `500` |
 | `RAGLAB_EMBEDDING_MODEL` | Local Sentence Transformers model | `sentence-transformers/all-MiniLM-L6-v2` |
 | `RAGLAB_EMBEDDING_BATCH_SIZE` | Local embedding batch size | `32` |
+| `RAGLAB_RERANKER_MODEL` | Local cross-encoder reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| `RAGLAB_RERANKER_BATCH_SIZE` | Reranker batch size | `16` |
 | `RAGLAB_QDRANT_COLLECTION` | Shared dense-vector collection | `raglab_chunks` |
 | `RAGLAB_BM25_KEY_PREFIX` | Redis namespace for sparse tokens | `raglab:bm25` |
 | `RAGLAB_POSTGRES_DSN` | Async SQLAlchemy connection URL | Local Compose PostgreSQL |
@@ -129,10 +133,14 @@ Ingestion can select fixed lexical-token windows, recursive character boundaries
 
 `make benchmark-chunking` compares all strategies against versioned synthetic technical and biomedical boundary cases. It reports structural measurements only; retrieval and answer-quality evaluation remains necessary before choosing a strategy.
 
+### Retrieval baseline
+
+The framework-free retrieval service supports dense, sparse, and hybrid modes with explicit native and fused score provenance. It applies portable metadata filters consistently, optionally reranks candidates using a local cross-encoder, and expands linked children to larger relational parent context. The design, formulas, filtering semantics, and current BM25 scaling boundary are documented in [`docs/retrieval.md`](docs/retrieval.md).
+
 ## Roadmap
 
-1. Framework-free dense, BM25, hybrid, and reranked RAG baseline
-2. Grounded generation providers, citations, and evidence refusal
+1. Grounded generation providers, citations, evidence sufficiency, and refusal behavior
+2. Complete the framework-free `CustomRAGPipeline`
 3. LangChain, LangGraph, LlamaIndex, and Haystack adapters
 4. Evaluation harness and reproducible benchmark reports
 5. Next.js inspection and evaluation UI

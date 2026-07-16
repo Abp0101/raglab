@@ -4,10 +4,11 @@ from uuid import UUID, uuid4
 import pymupdf
 import pytest
 
-from raglab.chunking import RecursiveCharacterChunker
+from raglab.chunking import ParentChildChunker, RecursiveCharacterChunker
 from raglab.core.schemas import (
     Chunk,
     ChunkingConfig,
+    ChunkingStrategy,
     Document,
     DocumentInput,
     DocumentStatus,
@@ -37,9 +38,11 @@ class FakeEmbeddingProvider:
 
     def __init__(self) -> None:
         self.calls = 0
+        self.embedded_count = 0
 
     async def embed_chunks(self, chunks: Sequence[Chunk]) -> Sequence[Embedding]:
         self.calls += 1
+        self.embedded_count = len(chunks)
         return [
             Embedding(
                 chunk_id=chunk.chunk_id, vector=(0.1, 0.2), model=self.model_name, dimensions=2
@@ -104,17 +107,29 @@ def build_pipeline(
     embedding_provider: FakeEmbeddingProvider,
     vector_indexer: FakeVectorIndexer,
     sparse_indexer: FakeSparseIndexer,
+    *,
+    parent_child: bool = False,
 ) -> DocumentIngestionPipeline:
     validator = PdfUploadValidator(max_size_bytes=1_000_000)
     return DocumentIngestionPipeline(
         validator=validator,
         parser=PyMuPDFParser(validator, max_pages=10),
-        chunker=RecursiveCharacterChunker(),
+        chunker=ParentChildChunker() if parent_child else RecursiveCharacterChunker(),
         embedding_provider=embedding_provider,
         document_repository=repository,
         vector_indexer=vector_indexer,
         sparse_indexer=sparse_indexer,
-        chunking_config=ChunkingConfig(chunk_size=120, chunk_overlap=20),
+        chunking_config=(
+            ChunkingConfig(
+                strategy=ChunkingStrategy.PARENT_CHILD,
+                chunk_size=64,
+                chunk_overlap=8,
+                parent_chunk_size=180,
+                parent_chunk_overlap=20,
+            )
+            if parent_child
+            else ChunkingConfig(chunk_size=120, chunk_overlap=20)
+        ),
     )
 
 
@@ -182,3 +197,24 @@ async def test_pipeline_compensates_when_indexing_fails() -> None:
     assert repository.deleted is True
     assert vectors.deleted > 0
     assert sparse.deleted > 0
+
+
+@pytest.mark.asyncio
+async def test_parent_child_ingestion_indexes_children_and_persists_parents() -> None:
+    repository = FakeDocumentRepository()
+    embeddings = FakeEmbeddingProvider()
+    vectors = FakeVectorIndexer()
+    sparse = FakeSparseIndexer()
+    pipeline = build_pipeline(repository, embeddings, vectors, sparse, parent_child=True)
+
+    result = await pipeline.ingest(
+        DocumentInput(file_name="imu.pdf", content=make_pdf(), collection_id=uuid4())
+    )
+
+    assert repository.saved is not None
+    persisted_chunks = repository.saved[1]
+    assert any(chunk.metadata.parent_chunk_id is None for chunk in persisted_chunks)
+    assert any(chunk.metadata.parent_chunk_id is not None for chunk in persisted_chunks)
+    assert result.chunk_count == len(persisted_chunks)
+    assert embeddings.embedded_count == vectors.upserted == sparse.upserted
+    assert embeddings.embedded_count < len(persisted_chunks)

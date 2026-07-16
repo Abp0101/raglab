@@ -10,7 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from raglab.core.exceptions import CollectionNotFoundError, DuplicateDocumentError
-from raglab.core.schemas import Chunk, Document, DocumentStatus
+from raglab.core.schemas import Chunk, Document, DocumentMetadata, DocumentStatus, TextSpan
 from raglab.database.models import ChunkRecord, CollectionRecord, DocumentRecord
 
 
@@ -58,6 +58,29 @@ class SQLAlchemyDocumentRepository:
     async def delete(self, document_id: UUID) -> None:
         async with self._sessions() as session, session.begin():
             await session.execute(delete(DocumentRecord).where(DocumentRecord.id == document_id))
+
+
+class SQLAlchemyChunkRepository:
+    """Load chunks with document metadata for context expansion."""
+
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self._sessions = sessions
+
+    async def get_by_ids(self, chunk_ids: Sequence[UUID]) -> Sequence[Chunk]:
+        if not chunk_ids:
+            return ()
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    select(ChunkRecord, DocumentRecord)
+                    .join(DocumentRecord, DocumentRecord.id == ChunkRecord.document_id)
+                    .where(ChunkRecord.id.in_(chunk_ids))
+                )
+            ).all()
+        chunks = {
+            chunk_record.id: _to_chunk(chunk_record, document) for chunk_record, document in rows
+        }
+        return tuple(chunks[chunk_id] for chunk_id in chunk_ids if chunk_id in chunks)
 
 
 def _document_record(document: Document, now: datetime) -> DocumentRecord:
@@ -114,4 +137,33 @@ def _to_document(record: DocumentRecord) -> Document:
         content_hash=record.content_hash,
         page_count=record.page_count,
         status=DocumentStatus(record.status),
+    )
+
+
+def _to_chunk(record: ChunkRecord, document: DocumentRecord) -> Chunk:
+    return Chunk(
+        chunk_id=record.id,
+        text=record.text,
+        metadata=DocumentMetadata(
+            document_id=document.id,
+            collection_id=document.collection_id,
+            file_name=document.file_name,
+            display_title=document.display_title,
+            authors=tuple(document.authors),
+            source_url=document.source_url,
+            uploaded_at=document.uploaded_at,
+            publication_date=document.publication_date,
+            file_type=document.file_type,
+            page_number=record.page_number,
+            section_heading=record.section_heading,
+            chunk_index=record.chunk_index,
+            parent_chunk_id=record.parent_chunk_id,
+            content_hash=record.content_hash,
+        ),
+        token_count=record.token_count,
+        text_span=(
+            TextSpan(start=record.text_start, end=record.text_end)
+            if record.text_start is not None and record.text_end is not None
+            else None
+        ),
     )

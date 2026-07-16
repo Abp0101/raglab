@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     max_pdf_pages: int = Field(default=500, ge=1, le=5000)
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_batch_size: int = Field(default=32, ge=1, le=512)
+    reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    reranker_batch_size: int = Field(default=16, ge=1, le=256)
     qdrant_collection: str = "raglab_chunks"
     bm25_key_prefix: str = "raglab:bm25"
 
