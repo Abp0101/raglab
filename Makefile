@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking benchmark-native-indexing build-evaluation-dataset seed-evaluation evaluate compare-frameworks smoke-ollama smoke-api check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking benchmark-native-indexing build-evaluation-dataset seed-evaluation evaluate compare-frameworks smoke-ollama smoke-api check check-all run web-install web-dev web-build web-test web-check infra-up infra-down
 
 PYTHON ?= python3.12
 RAGLAB_FRAMEWORK ?= custom
@@ -56,8 +56,28 @@ smoke-api:
 
 check: lint typecheck test
 
+check-all: check web-check
+
 run:
 	$(BIN)/uvicorn apps.api.main:app --reload
+
+web-install:
+	npm --prefix apps/web ci
+
+web-dev:
+	npm --prefix apps/web run dev
+
+web-build:
+	npm --prefix apps/web run build
+
+web-test:
+	npm --prefix apps/web run test
+
+web-check:
+	npm --prefix apps/web run lint
+	npm --prefix apps/web run typecheck
+	npm --prefix apps/web run test
+	npm --prefix apps/web run build
 
 infra-up:
 	docker compose up -d --wait

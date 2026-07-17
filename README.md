@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, LlamaIndex, and Haystack RAG pipelines**, a typed API, deterministic local evaluation, and isolated framework-native indexing experiments.
+The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, LlamaIndex, and Haystack RAG pipelines**, a typed API, deterministic local evaluation, isolated framework-native indexing experiments, and a Next.js evidence-inspection workbench.
 
 ## Foundation features
 
@@ -46,10 +46,12 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - A controlled cross-framework comparison runner that rejects paid cost or failed questions
 - Isolated Custom, LangChain, LlamaIndex, and Haystack native in-memory indexing experiments with fixed local controls
 - Process-local Prometheus metrics, structured correlation logs, safe failure envelopes, and degraded-dependency coverage
+- A responsive Next.js evidence workbench for corpus management, streamed query inspection, cross-framework measurement, and local operations
+- A locally bundled research-instrument design system with no remote fonts, hosted analytics, paid API SDK, or generic dashboard kit
 
 ## Quick start
 
-Prerequisites: Python 3.12, Docker with Compose, and GNU Make.
+Prerequisites: Python 3.12, Node.js 20.9 or newer, Docker with Compose, and GNU Make.
 
 ```bash
 cp .env.example .env
@@ -58,9 +60,18 @@ make infra-up
 make run
 ```
 
+In a second terminal, start the web workbench:
+
+```bash
+cp apps/web/.env.example apps/web/.env.local
+make web-install
+make web-dev
+```
+
 Then open:
 
 - API documentation: <http://localhost:8000/docs>
+- Evidence workbench: <http://localhost:3000>
 - Liveness: <http://localhost:8000/health/live>
 - Readiness: <http://localhost:8000/health/ready>
 - Local metrics: <http://localhost:8000/metrics>
@@ -88,7 +99,9 @@ make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=haystack # evalu
 make compare-frameworks RAGLAB_LLM_MODEL=llama3.2:latest # compare all local pipelines
 make smoke-ollama RAGLAB_LLM_MODEL=llama3.2:latest # verify local structured generation
 make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest # exercise the complete local API path
-make check        # run all local quality gates
+make check        # run backend quality gates
+make web-check    # lint, typecheck, test, and build the Next.js workbench
+make check-all    # run the backend and frontend quality gates
 make infra-down   # stop local backing services
 alembic upgrade head  # apply database migrations
 ```
@@ -145,14 +158,14 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
                                               │
                                               └── tokenization ── Redis/BM25
 
-HTTP client ── bearer API key + RBAC ── FastAPI ── request ID + logs + local metrics
+Next.js workbench ── session-scoped bearer key ── FastAPI ── request ID + logs + local metrics
               ├── collection + document catalog ── PostgreSQL
               ├── /query ── registry ── Custom, LangChain, LangGraph, LlamaIndex, or Haystack
               ├── /health/ready checks all three stores
               └── /metrics exposes a process-local bounded snapshot
 ```
 
-Application code is split between the deployable API in `apps/api` and reusable, framework-independent code in `src/raglab`. RAG implementations depend on the models in `raglab.core.schemas` and protocols in `raglab.core.interfaces`, rather than importing types from another framework adapter.
+Application code is split between the Next.js interface in `apps/web`, the deployable API in `apps/api`, and reusable, framework-independent code in `src/raglab`. RAG implementations depend on the models in `raglab.core.schemas` and protocols in `raglab.core.interfaces`, rather than importing types from another framework adapter.
 
 The shared `RAGPipeline` boundary is intentionally small:
 
@@ -207,6 +220,10 @@ FastAPI exposes role-protected collection creation and listing, bounded multipar
 
 Every request receives a validated correlation ID and a structured completion log. `GET /metrics` exposes low-cardinality request counters and latency histograms, sanitized error counters, durable ingestion outcomes, and the latest readiness state. Expected provider outages return a safe HTTP 503 with a retry hint; unexpected failures return a redacted HTTP 500, including after SSE headers have opened. The signal contract, failure matrix, runbook, limitations, and scale-up boundary are documented in [`docs/observability.md`](docs/observability.md) and [ADR 0010](docs/adr/0010-process-local-bounded-observability.md).
 
+### Evidence workbench
+
+The web client exposes five purpose-built surfaces: a corpus and pipeline overview, a streamed evidence trace, a collection/document ledger, a five-framework measurement matrix, and a bounded local operations console. Retrieved chunks keep their rank, page, section, fusion score, reranker score, and exact quoted text beside the generated answer. API keys are optional and remain in browser-tab session storage; they are never built into the client bundle. When the local API is unavailable, an explicitly labelled preview dataset can be enabled for interface review without implying a live run. Setup, environment variables, interaction behavior, and verification commands are documented in [`docs/frontend.md`](docs/frontend.md); visual tokens and component rules live in [`apps/web/DESIGN_SYSTEM.md`](apps/web/DESIGN_SYSTEM.md).
+
 ### Zero paid API policy
 
 The supported default path is fully local: Ollama generation, Sentence Transformers embeddings, cross-encoder reranking, PostgreSQL, Qdrant, and Redis. `RAGLAB_ALLOW_PAID_API_USAGE=false` blocks construction of the OpenAI-compatible adapter even if someone changes the provider name. Haystack telemetry is forcibly disabled before its imports and again at runtime. Its core package transitively installs an OpenAI client, but RAGLab never constructs an OpenAI Haystack component. The OpenAI-compatible implementation remains for portfolio completeness and is tested only with mocked HTTP; RAGLab development, tests, demos, and evaluation must not invoke metered APIs.
@@ -217,8 +234,8 @@ The first versioned dataset is a small synthetic harness-validation corpus cover
 
 Measured baselines progress from the first [`Custom run`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md) through controlled [`two-pipeline`](reports/baselines/custom-vs-langchain-llama3.2-v1.md), [`three-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-llama3.2-v1.md), [`four-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-vs-llamaindex-llama3.2-v1.md), and [`five-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-vs-llamaindex-vs-haystack-llama3.2-v1.md) comparisons. They retain observed misses and are not presented as framework rankings. `make compare-frameworks` reproduces a local five-pipeline report over the same dataset.
 
-## Roadmap
+## Milestone status
 
-1. Next.js inspection and evaluation UI
+The original portfolio milestone is implemented end to end: local ingestion, five orchestration paths, controlled evaluation, native indexing experiments, observability, and the inspection UI are all present. Future work should be driven by measured user or deployment needs rather than filling a placeholder roadmap.
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.

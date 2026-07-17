@@ -27,3 +27,26 @@ jobs:
         run: mypy
       - name: Tests
         run: pytest --cov --cov-report=term-missing
+
+  web-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci
+      - name: ESLint
+        run: npm run lint
+      - name: TypeScript
+        run: npm run typecheck
+      - name: Component and parser tests
+        run: npm test
+      - name: Production build
+        run: npm run build

@@ -12,3 +12,8 @@ dist/
 build/
 *.egg-info/
 reports/generated/
+node_modules/
+.next/
+apps/web/.env.local
+apps/web/coverage/
+*.tsbuildinfo

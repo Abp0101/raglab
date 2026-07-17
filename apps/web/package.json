@@ -1,0 +1,37 @@
+{
+  "name": "raglab-evidence-workbench",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "NEXT_TELEMETRY_DISABLED=1 next dev --port 3000",
+    "build": "NEXT_TELEMETRY_DISABLED=1 next build",
+    "start": "NEXT_TELEMETRY_DISABLED=1 next start --port 3000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/ibm-plex-mono": "^5.2.7",
+    "@fontsource-variable/instrument-sans": "^5.2.6",
+    "next": "16.2.10",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@types/node": "^24.10.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "eslint": "^9.39.2",
+    "eslint-config-next": "16.2.10",
+    "jsdom": "^28.1.0",
+    "typescript": "^5.9.3",
+    "vitest": "^4.1.10"
+  },
+  "overrides": {
+    "next": {
+      "postcss": "8.5.19"
+    }
+  }
+}
