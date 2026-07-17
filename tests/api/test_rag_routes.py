@@ -8,9 +8,11 @@ from fastapi.testclient import TestClient
 
 from raglab.core.config import Settings
 from raglab.core.exceptions import CollectionNotFoundError
+from raglab.core.pagination import CursorKind, decode_cursor, encode_cursor
 from raglab.core.schemas import (
     Collection,
     CollectionCreate,
+    CursorPage,
     Document,
     DocumentInput,
     DocumentStatus,
@@ -53,8 +55,37 @@ class MemoryCatalog:
         self.collections[collection.collection_id] = collection
         return collection
 
-    async def list_collections(self) -> Sequence[Collection]:
-        return tuple(self.collections.values())
+    async def list_collections(
+        self,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[Collection]:
+        position = decode_cursor(cursor, kind=CursorKind.COLLECTIONS, scope=None)
+        items = sorted(
+            self.collections.values(),
+            key=lambda item: (item.created_at, item.collection_id),
+        )
+        if position is not None:
+            items = [
+                item
+                for item in items
+                if (item.created_at, item.collection_id) > (position.ordered_at, position.item_id)
+            ]
+        selected = items[:limit]
+        return CursorPage(
+            items=tuple(selected),
+            next_cursor=(
+                encode_cursor(
+                    kind=CursorKind.COLLECTIONS,
+                    scope=None,
+                    ordered_at=selected[-1].created_at,
+                    item_id=selected[-1].collection_id,
+                )
+                if len(items) > limit
+                else None
+            ),
+        )
 
     async def get_collection(self, collection_id: UUID) -> Collection:
         try:
@@ -62,12 +93,42 @@ class MemoryCatalog:
         except KeyError as error:
             raise CollectionNotFoundError(f"collection {collection_id} does not exist") from error
 
-    async def list_documents(self, collection_id: UUID) -> Sequence[Document]:
+    async def list_documents(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[Document]:
         await self.get_collection(collection_id)
-        return tuple(
-            document
-            for document in self.documents.values()
-            if document.collection_id == collection_id
+        position = decode_cursor(cursor, kind=CursorKind.DOCUMENTS, scope=collection_id)
+        items = sorted(
+            (
+                document
+                for document in self.documents.values()
+                if document.collection_id == collection_id
+            ),
+            key=lambda item: (item.uploaded_at, item.document_id),
+        )
+        if position is not None:
+            items = [
+                item
+                for item in items
+                if (item.uploaded_at, item.document_id) > (position.ordered_at, position.item_id)
+            ]
+        selected = items[:limit]
+        return CursorPage(
+            items=tuple(selected),
+            next_cursor=(
+                encode_cursor(
+                    kind=CursorKind.DOCUMENTS,
+                    scope=collection_id,
+                    ordered_at=selected[-1].uploaded_at,
+                    item_id=selected[-1].document_id,
+                )
+                if len(items) > limit
+                else None
+            ),
         )
 
     async def get_document(self, document_id: UUID) -> Document:
@@ -143,6 +204,43 @@ class MemoryJobManager:
     async def get(self, job_id: UUID) -> IngestionJob:
         return self.jobs[job_id]
 
+    async def list_for_collection(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[IngestionJob]:
+        position = decode_cursor(
+            cursor,
+            kind=CursorKind.INGESTION_JOBS,
+            scope=collection_id,
+        )
+        items = sorted(
+            (job for job in self.jobs.values() if job.collection_id == collection_id),
+            key=lambda item: (item.created_at, item.job_id),
+        )
+        if position is not None:
+            items = [
+                item
+                for item in items
+                if (item.created_at, item.job_id) > (position.ordered_at, position.item_id)
+            ]
+        selected = items[:limit]
+        return CursorPage(
+            items=tuple(selected),
+            next_cursor=(
+                encode_cursor(
+                    kind=CursorKind.INGESTION_JOBS,
+                    scope=collection_id,
+                    ordered_at=selected[-1].created_at,
+                    item_id=selected[-1].job_id,
+                )
+                if len(items) > limit
+                else None
+            ),
+        )
+
     async def close(self) -> None:
         return None
 
@@ -172,7 +270,7 @@ def test_collection_create_list_and_get() -> None:
         fetched = client.get(f"/collections/{collection_id}")
 
     assert created.status_code == 201
-    assert listed.json()[0]["name"] == "Biomedical papers"
+    assert listed.json()["items"][0]["name"] == "Biomedical papers"
     assert fetched.json()["description"] == "Local corpus"
 
 
@@ -203,11 +301,37 @@ def test_background_upload_returns_pollable_durable_job_contract() -> None:
             files={"file": ("paper.pdf", b"%PDF-1.7\nlocal-test", "application/pdf")},
         )
         polled = client.get(f"/ingestion-jobs/{accepted.json()['job_id']}")
+        listed = client.get(f"/collections/{collection['collection_id']}/ingestion-jobs")
 
     assert accepted.status_code == 202
     assert accepted.json()["status"] == "queued"
     assert polled.status_code == 200
     assert polled.json()["file_name"] == "paper.pdf"
+    assert listed.json()["items"][0]["job_id"] == accepted.json()["job_id"]
+
+
+def test_cursor_pagination_and_scope_validation() -> None:
+    client, _, _ = make_client()
+
+    with client:
+        for name in ("First", "Second", "Third"):
+            client.post("/collections", json={"name": name})
+        first_page = client.get("/collections", params={"limit": 2})
+        cursor = first_page.json()["next_cursor"]
+        second_page = client.get("/collections", params={"limit": 2, "cursor": cursor})
+        collection_id = first_page.json()["items"][0]["collection_id"]
+        wrong_scope = client.get(
+            f"/collections/{collection_id}/documents",
+            params={"cursor": cursor},
+        )
+        invalid_limit = client.get("/collections", params={"limit": 101})
+
+    assert [item["name"] for item in first_page.json()["items"]] == ["First", "Second"]
+    assert [item["name"] for item in second_page.json()["items"]] == ["Third"]
+    assert second_page.json()["next_cursor"] is None
+    assert wrong_scope.status_code == 422
+    assert wrong_scope.json()["error"]["type"] == "InvalidCursor"
+    assert invalid_limit.status_code == 422
 
 
 def test_query_and_pipeline_discovery_use_shared_contracts() -> None:
@@ -324,5 +448,5 @@ def test_document_metadata_routes() -> None:
         fetched = client.get(f"/documents/{document.document_id}")
 
     assert listed.status_code == 200
-    assert listed.json()[0]["document_id"] == str(document.document_id)
+    assert listed.json()["items"][0]["document_id"] == str(document.document_id)
     assert fetched.json()["status"] == "ready"

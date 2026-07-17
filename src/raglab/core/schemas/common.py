@@ -11,3 +11,10 @@ class RAGLabModel(BaseModel):
         str_strip_whitespace=True,
         validate_assignment=True,
     )
+
+
+class CursorPage[PageItemT](RAGLabModel):
+    """Stable keyset page returned by growing collection endpoints."""
+
+    items: tuple[PageItemT, ...] = ()
+    next_cursor: str | None = None

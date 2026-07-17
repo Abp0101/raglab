@@ -29,6 +29,10 @@ class IngestionJobNotFoundError(RAGLabError):
     """The requested background ingestion job does not exist."""
 
 
+class InvalidCursorError(RAGLabError):
+    """A pagination cursor is malformed or belongs to another resource."""
+
+
 class PaidProviderDisabledError(RAGLabError):
     """A metered remote provider was selected without an explicit safety opt-in."""
 

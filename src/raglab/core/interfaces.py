@@ -10,6 +10,7 @@ from raglab.core.schemas import (
     ChunkingConfig,
     Collection,
     CollectionCreate,
+    CursorPage,
     Document,
     DocumentInput,
     DocumentStatus,
@@ -37,11 +38,22 @@ class CatalogRepository(Protocol):
 
     async def create_collection(self, request: CollectionCreate) -> Collection: ...
 
-    async def list_collections(self) -> Sequence[Collection]: ...
+    async def list_collections(
+        self,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[Collection]: ...
 
     async def get_collection(self, collection_id: UUID) -> Collection: ...
 
-    async def list_documents(self, collection_id: UUID) -> Sequence[Document]: ...
+    async def list_documents(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[Document]: ...
 
     async def get_document(self, document_id: UUID) -> Document: ...
 
@@ -53,6 +65,14 @@ class IngestionJobRepository(Protocol):
     async def create(self, document: DocumentInput) -> IngestionJob: ...
 
     async def get(self, job_id: UUID) -> IngestionJob: ...
+
+    async def list_for_collection(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[IngestionJob]: ...
 
     async def claim_next(
         self,
@@ -94,6 +114,14 @@ class IngestionJobManager(Protocol):
     async def submit(self, document: DocumentInput) -> IngestionJob: ...
 
     async def get(self, job_id: UUID) -> IngestionJob: ...
+
+    async def list_for_collection(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[IngestionJob]: ...
 
     async def close(self) -> None: ...
 

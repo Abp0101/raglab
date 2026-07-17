@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Sequence
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from qdrant_client import AsyncQdrantClient
@@ -10,6 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy import delete, select, update
 
 from raglab.core.config import Settings
+from raglab.core.pagination import CursorKind, encode_cursor
 from raglab.core.schemas import (
     Chunk,
     CollectionCreate,
@@ -59,13 +60,119 @@ async def test_collection_catalog_round_trip() -> None:
 
         assert fetched.name == "API integration"
         assert fetched.document_count == 0
-        assert created.collection_id in {item.collection_id for item in listed}
+        assert created.collection_id in {item.collection_id for item in listed.items}
     finally:
         if collection_id is not None:
             with suppress(Exception):
                 async with sessions() as session, session.begin():
                     await session.execute(
                         delete(CollectionRecord).where(CollectionRecord.id == collection_id)
+                    )
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_postgres_keyset_pages_use_uuid_tiebreakers() -> None:
+    settings = Settings(_env_file=None)
+    engine = create_engine(settings.postgres_dsn)
+    sessions = create_session_factory(engine)
+    catalog = SQLAlchemyCatalogRepository(sessions)
+    jobs = SQLAlchemyIngestionJobRepository(sessions)
+    collection_ids = []
+    anchor = datetime(2099, 1, 1, tzinfo=UTC)
+
+    try:
+        collections = [
+            await catalog.create_collection(CollectionCreate(name=f"Page {index}"))
+            for index in range(3)
+        ]
+        collection_ids = [item.collection_id for item in collections]
+        primary_id = collection_ids[0]
+        document_ids = [uuid4() for _ in range(3)]
+        now = datetime.now(UTC)
+        async with sessions() as session, session.begin():
+            await session.execute(
+                update(CollectionRecord)
+                .where(CollectionRecord.id.in_(collection_ids))
+                .values(created_at=anchor, updated_at=anchor)
+            )
+            session.add_all(
+                DocumentRecord(
+                    id=document_id,
+                    collection_id=primary_id,
+                    file_name=f"{index}.pdf",
+                    display_title=f"Document {index}",
+                    authors=[],
+                    source_url=None,
+                    uploaded_at=anchor,
+                    publication_date=None,
+                    file_type="application/pdf",
+                    content_hash=f"{index + 1:064x}",
+                    page_count=1,
+                    status=DocumentStatus.READY.value,
+                    created_at=now,
+                    updated_at=now,
+                )
+                for index, document_id in enumerate(document_ids)
+            )
+        created_jobs = [
+            await jobs.create(
+                DocumentInput(
+                    file_name=f"job-{index}.pdf",
+                    content=f"%PDF-job-{index}".encode(),
+                    collection_id=primary_id,
+                )
+            )
+            for index in range(3)
+        ]
+        job_ids = [job.job_id for job in created_jobs]
+        async with sessions() as session, session.begin():
+            await session.execute(
+                update(IngestionJobRecord)
+                .where(IngestionJobRecord.id.in_(job_ids))
+                .values(created_at=anchor, updated_at=anchor)
+            )
+
+        collection_start = encode_cursor(
+            kind=CursorKind.COLLECTIONS,
+            scope=None,
+            ordered_at=anchor,
+            item_id=UUID(int=0),
+        )
+        collection_first = await catalog.list_collections(limit=2, cursor=collection_start)
+        collection_second = await catalog.list_collections(
+            limit=2,
+            cursor=collection_first.next_cursor,
+        )
+        document_first = await catalog.list_documents(primary_id, limit=2)
+        document_second = await catalog.list_documents(
+            primary_id,
+            limit=2,
+            cursor=document_first.next_cursor,
+        )
+        job_first = await jobs.list_for_collection(primary_id, limit=2)
+        job_second = await jobs.list_for_collection(
+            primary_id,
+            limit=2,
+            cursor=job_first.next_cursor,
+        )
+
+        assert [
+            item.collection_id for item in (*collection_first.items, *collection_second.items)
+        ] == sorted(collection_ids)
+        assert [
+            item.document_id for item in (*document_first.items, *document_second.items)
+        ] == sorted(document_ids)
+        assert [item.job_id for item in (*job_first.items, *job_second.items)] == sorted(job_ids)
+        assert collection_second.next_cursor is None
+        assert document_second.next_cursor is None
+        assert job_second.next_cursor is None
+    finally:
+        if collection_ids:
+            with suppress(Exception):
+                async with sessions() as session, session.begin():
+                    await session.execute(
+                        delete(CollectionRecord).where(CollectionRecord.id.in_(collection_ids))
                     )
         await engine.dispose()
 

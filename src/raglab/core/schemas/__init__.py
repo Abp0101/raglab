@@ -1,6 +1,6 @@
 """Stable, framework-independent models exposed by the RAGLab core."""
 
-from raglab.core.schemas.common import RAGLabModel
+from raglab.core.schemas.common import CursorPage, RAGLabModel
 from raglab.core.schemas.documents import (
     Chunk,
     ChunkingConfig,
@@ -62,6 +62,7 @@ __all__ = [
     "Citation",
     "Collection",
     "CollectionCreate",
+    "CursorPage",
     "Document",
     "DocumentInput",
     "DocumentMetadata",

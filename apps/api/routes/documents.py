@@ -3,7 +3,7 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile, status
 from pydantic import HttpUrl
 
 from apps.api.dependencies import (
@@ -16,6 +16,7 @@ from raglab.core.config import Settings
 from raglab.core.exceptions import DocumentValidationError
 from raglab.core.interfaces import CatalogRepository, IngestionJobManager
 from raglab.core.schemas import (
+    CursorPage,
     Document,
     DocumentInput,
     FrameworkName,
@@ -90,13 +91,32 @@ async def get_ingestion_job(
     return await jobs.get(job_id)
 
 
-@router.get("/collections/{collection_id}/documents", response_model=list[Document])
+@router.get(
+    "/collections/{collection_id}/ingestion-jobs",
+    response_model=CursorPage[IngestionJob],
+)
+async def list_ingestion_jobs(
+    collection_id: UUID,
+    jobs: Annotated[IngestionJobManager, Depends(get_ingestion_job_manager)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+) -> CursorPage[IngestionJob]:
+    """List durable jobs without exposing retained source bytes or lease owners."""
+    return await jobs.list_for_collection(collection_id, limit=limit, cursor=cursor)
+
+
+@router.get(
+    "/collections/{collection_id}/documents",
+    response_model=CursorPage[Document],
+)
 async def list_documents(
     collection_id: UUID,
     catalog: Annotated[CatalogRepository, Depends(get_catalog_repository)],
-) -> list[Document]:
-    """List source metadata without returning stored PDF bytes or chunk bodies."""
-    return list(await catalog.list_documents(collection_id))
+    limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=512)] = None,
+) -> CursorPage[Document]:
+    """List source metadata through a stable collection-scoped keyset."""
+    return await catalog.list_documents(collection_id, limit=limit, cursor=cursor)
 
 
 @router.get("/documents/{document_id}", response_model=Document)

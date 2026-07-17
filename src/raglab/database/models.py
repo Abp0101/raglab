@@ -23,6 +23,7 @@ class CollectionRecord(TimestampMixin, Base):
     """Named logical collection used by all retrieval backends."""
 
     __tablename__ = "collections"
+    __table_args__ = (Index("ix_collections_created_id", "created_at", "id"),)
 
     id: Mapped[UUID] = mapped_column(SQLUuid(), primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
@@ -39,6 +40,12 @@ class DocumentRecord(TimestampMixin, Base):
     __table_args__ = (
         Index("uq_documents_collection_hash", "collection_id", "content_hash", unique=True),
         Index("ix_documents_collection_status", "collection_id", "status"),
+        Index(
+            "ix_documents_collection_uploaded_id",
+            "collection_id",
+            "uploaded_at",
+            "id",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(SQLUuid(), primary_key=True)
@@ -101,6 +108,12 @@ class IngestionJobRecord(TimestampMixin, Base):
             "status",
             "lease_expires_at",
             "created_at",
+        ),
+        Index(
+            "ix_ingestion_jobs_collection_created_id",
+            "collection_id",
+            "created_at",
+            "id",
         ),
     )
 

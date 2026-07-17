@@ -8,7 +8,13 @@ from uuid import UUID, uuid4
 
 from raglab.core.exceptions import RAGLabError
 from raglab.core.interfaces import IngestionJobRepository, RAGPipeline
-from raglab.core.schemas import DocumentInput, IngestionJob, IngestionJobClaim, IngestionResult
+from raglab.core.schemas import (
+    CursorPage,
+    DocumentInput,
+    IngestionJob,
+    IngestionJobClaim,
+    IngestionResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +74,19 @@ class BackgroundIngestionManager:
 
     async def get(self, job_id: UUID) -> IngestionJob:
         return await self._repository.get(job_id)
+
+    async def list_for_collection(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[IngestionJob]:
+        return await self._repository.list_for_collection(
+            collection_id,
+            limit=limit,
+            cursor=cursor,
+        )
 
     async def close(self) -> None:
         """Stop pollers and release active leases for immediate reassignment."""

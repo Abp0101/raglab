@@ -10,6 +10,7 @@ from raglab.core.exceptions import (
     DocumentValidationError,
     DuplicateDocumentError,
     IngestionJobNotFoundError,
+    InvalidCursorError,
     MalformedProviderResponseError,
     PaidProviderDisabledError,
     ProviderUnavailableError,
@@ -36,7 +37,7 @@ def _status_code(error: Exception) -> int:
         return status.HTTP_404_NOT_FOUND
     if isinstance(error, DuplicateDocumentError):
         return status.HTTP_409_CONFLICT
-    if isinstance(error, (DocumentValidationError, DocumentParsingError)):
+    if isinstance(error, (DocumentValidationError, DocumentParsingError, InvalidCursorError)):
         return status.HTTP_422_UNPROCESSABLE_CONTENT
     if isinstance(error, PaidProviderDisabledError):
         return status.HTTP_403_FORBIDDEN

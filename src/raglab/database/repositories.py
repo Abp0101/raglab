@@ -16,10 +16,12 @@ from raglab.core.exceptions import (
     DuplicateDocumentError,
     IngestionJobNotFoundError,
 )
+from raglab.core.pagination import CursorKind, decode_cursor, encode_cursor
 from raglab.core.schemas import (
     Chunk,
     Collection,
     CollectionCreate,
+    CursorPage,
     Document,
     DocumentInput,
     DocumentMetadata,
@@ -59,17 +61,47 @@ class SQLAlchemyCatalogRepository:
             await session.flush()
         return _to_collection(record, document_count=0)
 
-    async def list_collections(self) -> Sequence[Collection]:
-        async with self._sessions() as session:
-            rows = (
-                await session.execute(
-                    select(CollectionRecord, func.count(DocumentRecord.id))
-                    .outerjoin(DocumentRecord)
-                    .group_by(CollectionRecord.id)
-                    .order_by(CollectionRecord.created_at, CollectionRecord.id)
+    async def list_collections(
+        self,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[Collection]:
+        _validate_page_limit(limit)
+        position = decode_cursor(cursor, kind=CursorKind.COLLECTIONS, scope=None)
+        statement = (
+            select(CollectionRecord, func.count(DocumentRecord.id))
+            .outerjoin(DocumentRecord)
+            .group_by(CollectionRecord.id)
+            .order_by(CollectionRecord.created_at, CollectionRecord.id)
+            .limit(limit + 1)
+        )
+        if position is not None:
+            statement = statement.where(
+                or_(
+                    CollectionRecord.created_at > position.ordered_at,
+                    and_(
+                        CollectionRecord.created_at == position.ordered_at,
+                        CollectionRecord.id > position.item_id,
+                    ),
                 )
-            ).all()
-        return tuple(_to_collection(record, document_count=count) for record, count in rows)
+            )
+        async with self._sessions() as session:
+            rows = (await session.execute(statement)).all()
+        selected = rows[:limit]
+        return CursorPage(
+            items=tuple(_to_collection(record, document_count=count) for record, count in selected),
+            next_cursor=(
+                encode_cursor(
+                    kind=CursorKind.COLLECTIONS,
+                    scope=None,
+                    ordered_at=selected[-1][0].created_at,
+                    item_id=selected[-1][0].id,
+                )
+                if len(rows) > limit
+                else None
+            ),
+        )
 
     async def get_collection(self, collection_id: UUID) -> Collection:
         async with self._sessions() as session:
@@ -85,17 +117,52 @@ class SQLAlchemyCatalogRepository:
             raise CollectionNotFoundError(f"collection {collection_id} does not exist")
         return _to_collection(row[0], document_count=row[1])
 
-    async def list_documents(self, collection_id: UUID) -> Sequence[Document]:
+    async def list_documents(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[Document]:
         await self.get_collection(collection_id)
-        async with self._sessions() as session:
-            records = (
-                await session.scalars(
-                    select(DocumentRecord)
-                    .where(DocumentRecord.collection_id == collection_id)
-                    .order_by(DocumentRecord.uploaded_at, DocumentRecord.id)
+        _validate_page_limit(limit)
+        position = decode_cursor(
+            cursor,
+            kind=CursorKind.DOCUMENTS,
+            scope=collection_id,
+        )
+        statement = (
+            select(DocumentRecord)
+            .where(DocumentRecord.collection_id == collection_id)
+            .order_by(DocumentRecord.uploaded_at, DocumentRecord.id)
+            .limit(limit + 1)
+        )
+        if position is not None:
+            statement = statement.where(
+                or_(
+                    DocumentRecord.uploaded_at > position.ordered_at,
+                    and_(
+                        DocumentRecord.uploaded_at == position.ordered_at,
+                        DocumentRecord.id > position.item_id,
+                    ),
                 )
-            ).all()
-        return tuple(_to_document(record) for record in records)
+            )
+        async with self._sessions() as session:
+            records = (await session.scalars(statement)).all()
+        selected = records[:limit]
+        return CursorPage(
+            items=tuple(_to_document(record) for record in selected),
+            next_cursor=(
+                encode_cursor(
+                    kind=CursorKind.DOCUMENTS,
+                    scope=collection_id,
+                    ordered_at=selected[-1].uploaded_at,
+                    item_id=selected[-1].id,
+                )
+                if len(records) > limit
+                else None
+            ),
+        )
 
     async def get_document(self, document_id: UUID) -> Document:
         async with self._sessions() as session:
@@ -141,6 +208,58 @@ class SQLAlchemyIngestionJobRepository:
         if record is None:
             raise IngestionJobNotFoundError(f"ingestion job {job_id} does not exist")
         return _to_ingestion_job(record)
+
+    async def list_for_collection(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[IngestionJob]:
+        """List durable jobs using a stable collection-scoped keyset."""
+        _validate_page_limit(limit)
+        position = decode_cursor(
+            cursor,
+            kind=CursorKind.INGESTION_JOBS,
+            scope=collection_id,
+        )
+        statement = (
+            select(IngestionJobRecord)
+            .where(IngestionJobRecord.collection_id == collection_id)
+            .order_by(IngestionJobRecord.created_at, IngestionJobRecord.id)
+            .limit(limit + 1)
+        )
+        if position is not None:
+            statement = statement.where(
+                or_(
+                    IngestionJobRecord.created_at > position.ordered_at,
+                    and_(
+                        IngestionJobRecord.created_at == position.ordered_at,
+                        IngestionJobRecord.id > position.item_id,
+                    ),
+                )
+            )
+        async with self._sessions() as session:
+            collection_exists = await session.scalar(
+                select(CollectionRecord.id).where(CollectionRecord.id == collection_id)
+            )
+            if collection_exists is None:
+                raise CollectionNotFoundError(f"collection {collection_id} does not exist")
+            records = (await session.scalars(statement)).all()
+        selected = records[:limit]
+        return CursorPage(
+            items=tuple(_to_ingestion_job(record) for record in selected),
+            next_cursor=(
+                encode_cursor(
+                    kind=CursorKind.INGESTION_JOBS,
+                    scope=collection_id,
+                    ordered_at=selected[-1].created_at,
+                    item_id=selected[-1].id,
+                )
+                if len(records) > limit
+                else None
+            ),
+        )
 
     async def claim_next(
         self,
@@ -431,6 +550,11 @@ async def _database_now(session: AsyncSession) -> datetime:
     if not isinstance(value, datetime):
         raise RuntimeError("database did not return a timestamp")
     return value
+
+
+def _validate_page_limit(limit: int) -> None:
+    if not 1 <= limit <= 100:
+        raise ValueError("page limit must be between 1 and 100")
 
 
 def _chunk_record(chunk: Chunk, now: datetime) -> ChunkRecord:

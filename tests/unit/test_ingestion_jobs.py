@@ -7,6 +7,7 @@ import pytest
 
 from raglab.core.exceptions import DocumentValidationError, IngestionJobNotFoundError
 from raglab.core.schemas import (
+    CursorPage,
     DocumentInput,
     IngestionJob,
     IngestionJobClaim,
@@ -48,6 +49,18 @@ class MemoryJobRepository:
             return self.jobs[job_id]
         except KeyError as error:
             raise IngestionJobNotFoundError from error
+
+    async def list_for_collection(
+        self,
+        collection_id: UUID,
+        *,
+        limit: int = 20,
+        cursor: str | None = None,
+    ) -> CursorPage[IngestionJob]:
+        if cursor is not None:
+            raise AssertionError("cursor traversal is covered by pagination tests")
+        items = [job for job in self.jobs.values() if job.collection_id == collection_id]
+        return CursorPage(items=tuple(items[:limit]))
 
     async def claim_next(
         self,

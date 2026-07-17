@@ -9,12 +9,13 @@ RAGLab exposes one framework-neutral FastAPI surface. The current endpoints are 
 | `GET` | `/health/live` | Process liveness |
 | `GET` | `/health/ready` | PostgreSQL, Qdrant, and Redis readiness |
 | `POST` | `/collections` | Create a shared logical corpus |
-| `GET` | `/collections` | List collections and document counts |
+| `GET` | `/collections` | Page through collections and document counts |
 | `GET` | `/collections/{collection_id}` | Fetch one collection |
 | `POST` | `/collections/{collection_id}/documents` | Upload and ingest a text PDF |
 | `POST` | `/collections/{collection_id}/ingestion-jobs` | Persist a PDF and enqueue local ingestion |
+| `GET` | `/collections/{collection_id}/ingestion-jobs` | Page through durable ingestion jobs |
 | `GET` | `/ingestion-jobs/{job_id}` | Poll queued, processing, completed, or failed state |
-| `GET` | `/collections/{collection_id}/documents` | List document metadata |
+| `GET` | `/collections/{collection_id}/documents` | Page through document metadata |
 | `GET` | `/documents/{document_id}` | Fetch one document record |
 | `GET` | `/pipelines` | Discover implemented and planned frameworks |
 | `POST` | `/query` | Run the selected shared RAG contract |
@@ -45,6 +46,21 @@ curl -X POST http://localhost:8000/query \
 ```
 
 `custom`, `langchain`, `langgraph`, `llamaindex`, and `haystack` are executable. `/pipelines` marks all five target frameworks available. LangGraph reports `agentic: true`; selecting an unregistered implementation returns HTTP 501.
+
+## Cursor pagination
+
+Collection, document, and ingestion-job lists accept `limit` from 1 to 100, defaulting to 20, plus an optional `cursor`. They return the same envelope:
+
+```json
+{
+  "items": [],
+  "next_cursor": null
+}
+```
+
+Pass a non-null `next_cursor` unchanged to the same endpoint to continue. Cursors are forward-only and scoped to the resource plus collection where applicable, so a document cursor cannot be used for jobs or another collection. Malformed and mismatched cursors return HTTP 422. Ordering uses an immutable timestamp followed by UUID, preventing duplicates or gaps when timestamps tie. No total count is computed on each page.
+
+The token is opaque API state, not an authorization mechanism or encrypted data. Concurrent inserts and deletes can change what a traversal observes; clients that need snapshot semantics should record results or use a future export endpoint.
 
 ## Background ingestion
 
@@ -84,4 +100,4 @@ Validation failures return 422, missing resources 404, unavailable framework ada
 
 ## Current boundary
 
-Pagination, authentication, and deletion with coordinated multi-store cleanup remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.
+Authentication and deletion with coordinated multi-store cleanup remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.

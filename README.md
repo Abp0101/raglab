@@ -33,6 +33,7 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - Collection creation, bounded PDF upload, document listing, pipeline discovery, and shared query endpoints
 - Durable background-ingestion jobs with bounded local concurrency and restart recovery
 - PostgreSQL-backed ingestion leases with atomic multi-worker claims, heartbeats, crash recovery, and stale-owner protection
+- Stable cursor pagination for collections, documents, and ingestion jobs with bounded page sizes and scoped cursors
 - Server-Sent Event query progress with citation-validated terminal answers
 - Stable safe-error envelopes for validation, missing resources, unavailable frameworks, and providers
 - A runtime guard that disables metered OpenAI-compatible generation unless explicitly opted in
@@ -201,10 +202,9 @@ Measured baselines progress from the first [`Custom run`](reports/baselines/cust
 
 ## Roadmap
 
-1. Cursor pagination for collections, documents, and jobs
-2. Coordinated document deletion and authentication
-3. Framework-specific indexing experiments under separate benchmark configurations
-4. Local observability and failure-path integration hardening
-5. Next.js inspection and evaluation UI
+1. Coordinated document deletion and authentication
+2. Framework-specific indexing experiments under separate benchmark configurations
+3. Local observability and failure-path integration hardening
+4. Next.js inspection and evaluation UI
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.
