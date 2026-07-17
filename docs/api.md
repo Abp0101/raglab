@@ -44,7 +44,7 @@ curl -X POST http://localhost:8000/query \
   }'
 ```
 
-`custom`, `langchain`, `langgraph`, and `llamaindex` are executable. `/pipelines` returns all five target framework names and marks Haystack unavailable. LangGraph reports `agentic: true`; selecting an unavailable implementation returns HTTP 501.
+`custom`, `langchain`, `langgraph`, `llamaindex`, and `haystack` are executable. `/pipelines` marks all five target frameworks available. LangGraph reports `agentic: true`; selecting an unregistered implementation returns HTTP 501.
 
 ## Background ingestion
 

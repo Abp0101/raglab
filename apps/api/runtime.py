@@ -28,11 +28,13 @@ from raglab.ingestion.pipeline import DocumentIngestionPipeline
 from raglab.ingestion.validation import PdfUploadValidator
 from raglab.pipelines import (
     CustomRAGPipeline,
+    HaystackRAGPipeline,
     LangChainRAGPipeline,
     LangGraphRAGPipeline,
     LlamaIndexRAGPipeline,
     PipelineRegistry,
 )
+from raglab.pipelines.haystack_rag import create_haystack_ollama_factory
 from raglab.reranking import CrossEncoderReranker
 from raglab.retrieval import RetrievalService
 from raglab.retrieval.parent_expansion import ParentChildContextExpander
@@ -137,6 +139,15 @@ def build_api_services(settings: Settings) -> ApiServices:
         ),
         default_model=settings.llm_model,
     )
+    haystack = HaystackRAGPipeline(
+        ingestion=ingestion,
+        retrieval=retrieval,
+        generator_factory=create_haystack_ollama_factory(
+            str(settings.ollama_base_url),
+            timeout_seconds=settings.llm_timeout_seconds,
+        ),
+        default_model=settings.llm_model,
+    )
     return ApiServices(
         catalog=catalog,
         pipelines=PipelineRegistry(
@@ -145,6 +156,7 @@ def build_api_services(settings: Settings) -> ApiServices:
                 FrameworkName.LANGCHAIN: langchain,
                 FrameworkName.LANGGRAPH: langgraph,
                 FrameworkName.LLAMAINDEX: llamaindex,
+                FrameworkName.HAYSTACK: haystack,
             }
         ),
         ingestion_jobs=BackgroundIngestionManager(

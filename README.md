@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, and LlamaIndex RAG pipelines**, a typed API, and a deterministic local evaluation harness.
+The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, LlamaIndex, and Haystack RAG pipelines**, a typed API, and a deterministic local evaluation harness.
 
 ## Foundation features
 
@@ -40,6 +40,7 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - A native LangChain adapter using `BaseRetriever`, `ChatPromptTemplate`, Runnable composition, structured `ChatOllama`, and LangChain document splitting
 - A native LangGraph `StateGraph` with explicit evidence routes and one bounded citation-repair loop
 - A native LlamaIndex adapter using `BaseRetriever`, `TextNode`, `NodeWithScore`, `PromptTemplate`, structured local Ollama, and callback-normalized usage
+- A native Haystack `AsyncPipeline` using custom async components, scored `Document` objects, `ChatPromptBuilder`, and structured local `OllamaChatGenerator`
 - A controlled cross-framework comparison runner that rejects paid cost or failed questions
 
 ## Quick start
@@ -77,6 +78,7 @@ make evaluate RAGLAB_LLM_MODEL=llama3.2:latest # evaluate Custom (default)
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=langchain # evaluate LangChain
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=langgraph # evaluate LangGraph
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=llamaindex # evaluate LlamaIndex
+make evaluate RAGLAB_LLM_MODEL=llama3.2:latest RAGLAB_FRAMEWORK=haystack # evaluate Haystack
 make compare-frameworks RAGLAB_LLM_MODEL=llama3.2:latest # compare all local pipelines
 make smoke-ollama RAGLAB_LLM_MODEL=llama3.2:latest # verify local structured generation
 make smoke-api RAGLAB_LLM_MODEL=llama3.2:latest # exercise the complete local API path
@@ -87,7 +89,7 @@ alembic upgrade head  # apply database migrations
 
 ## Configuration
 
-All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local development; never commit `.env` or provider credentials.
+Application runtime variables use the `RAGLAB_` prefix. `HAYSTACK_TELEMETRY_ENABLED=false` is also set directly because Haystack reads that upstream variable at import time; RAGLab additionally disables its telemetry object in code. Copy `.env.example` for local development; never commit `.env` or provider credentials.
 
 | Variable | Purpose | Local default |
 | --- | --- | --- |
@@ -117,6 +119,7 @@ All runtime variables use the `RAGLAB_` prefix. Copy `.env.example` for local de
 | `RAGLAB_LLM_TIMEOUT_SECONDS` | Generation request timeout | `120` |
 | `RAGLAB_INPUT_COST_PER_MILLION` | Optional provider input rate | Empty |
 | `RAGLAB_OUTPUT_COST_PER_MILLION` | Optional provider output rate | Empty |
+| `HAYSTACK_TELEMETRY_ENABLED` | Disable Haystack's remote usage telemetry | `false` |
 | `RAGLAB_POSTGRES_DSN` | Async SQLAlchemy connection URL | Local Compose PostgreSQL |
 | `RAGLAB_QDRANT_URL` | Qdrant HTTP endpoint | `http://localhost:6333` |
 | `RAGLAB_QDRANT_API_KEY` | Optional Qdrant credential | Empty |
@@ -134,7 +137,7 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
 
 HTTP client ── FastAPI ── request ID + structured logging
               ├── collection + document catalog ── PostgreSQL
-              ├── /query ── registry ── Custom, LangChain, LangGraph, or LlamaIndex
+              ├── /query ── registry ── Custom, LangChain, LangGraph, LlamaIndex, or Haystack
               └── /health/ready checks all three stores
 ```
 
@@ -177,7 +180,7 @@ The framework-free retrieval service supports dense, sparse, and hybrid modes wi
 
 ### Grounded generation
 
-All four pipelines build bounded untrusted context, request strict structured output, validate exact citation quotes, and replace unsupported answers with an insufficient-evidence refusal. LangGraph adds explicit conditional state and one bounded repair route; LlamaIndex maps canonical retrieval into scored native nodes. Their boundaries and controlled comparison method are documented in [`docs/framework-comparison.md`](docs/framework-comparison.md). OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
+All five pipelines build bounded untrusted context, request strict structured output, validate exact citation quotes, and replace unsupported answers with an insufficient-evidence refusal. LangGraph adds explicit conditional state and one bounded repair route; LlamaIndex maps canonical retrieval into scored native nodes; Haystack executes an async component graph with native documents and chat prompts. Their boundaries and controlled comparison method are documented in [`docs/framework-comparison.md`](docs/framework-comparison.md). OpenAI-compatible and Ollama provider behavior, prompt-injection defenses, cost configuration, and limitations are documented in [`docs/generation.md`](docs/generation.md).
 
 ### HTTP API
 
@@ -185,20 +188,19 @@ FastAPI exposes collection creation and listing, bounded multipart PDF ingestion
 
 ### Zero paid API policy
 
-The supported default path is fully local: Ollama generation, Sentence Transformers embeddings, cross-encoder reranking, PostgreSQL, Qdrant, and Redis. `RAGLAB_ALLOW_PAID_API_USAGE=false` blocks construction of the OpenAI-compatible adapter even if someone changes the provider name. Its implementation remains for portfolio completeness and is tested only with mocked HTTP; RAGLab development, tests, demos, and evaluation must not invoke metered APIs.
+The supported default path is fully local: Ollama generation, Sentence Transformers embeddings, cross-encoder reranking, PostgreSQL, Qdrant, and Redis. `RAGLAB_ALLOW_PAID_API_USAGE=false` blocks construction of the OpenAI-compatible adapter even if someone changes the provider name. Haystack telemetry is forcibly disabled before its imports and again at runtime. Its core package transitively installs an OpenAI client, but RAGLab never constructs an OpenAI Haystack component. The OpenAI-compatible implementation remains for portfolio completeness and is tested only with mocked HTTP; RAGLab development, tests, demos, and evaluation must not invoke metered APIs.
 
 ### Evaluation harness
 
 The first versioned dataset is a small synthetic harness-validation corpus covering wearable sensors, rehabilitation safety, conflicting evidence, and refusal. The loader verifies its checksum and annotations before a run. Reports record the full configuration and compute deterministic retrieval, citation, refusal, lexical key-fact, latency, and cost measurements. Metric formulas, reproducibility rules, limitations, and the testing strategy are documented in [`docs/evaluation-methodology.md`](docs/evaluation-methodology.md).
 
-Measured baselines progress from the first [`Custom run`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md) through controlled [`two-pipeline`](reports/baselines/custom-vs-langchain-llama3.2-v1.md), [`three-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-llama3.2-v1.md), and [`four-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-vs-llamaindex-llama3.2-v1.md) comparisons. They retain observed misses and are not presented as framework rankings. `make compare-frameworks` reproduces a local report over the same dataset.
+Measured baselines progress from the first [`Custom run`](reports/baselines/custom-hybrid-reranked-llama3.2-v1.md) through controlled [`two-pipeline`](reports/baselines/custom-vs-langchain-llama3.2-v1.md), [`three-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-llama3.2-v1.md), [`four-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-vs-llamaindex-llama3.2-v1.md), and [`five-pipeline`](reports/baselines/custom-vs-langchain-vs-langgraph-vs-llamaindex-vs-haystack-llama3.2-v1.md) comparisons. They retain observed misses and are not presented as framework rankings. `make compare-frameworks` reproduces a local five-pipeline report over the same dataset.
 
 ## Roadmap
 
-1. Haystack adapter over the canonical corpus and evaluation contract
-2. Distributed job leases, pagination, deletion, and authentication
-3. Framework-specific indexing experiments under separate benchmark configurations
-4. Observability and failure-path integration hardening
-5. Next.js inspection and evaluation UI
+1. Distributed job leases, pagination, deletion, and authentication
+2. Framework-specific indexing experiments under separate benchmark configurations
+3. Local observability and failure-path integration hardening
+4. Next.js inspection and evaluation UI
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.

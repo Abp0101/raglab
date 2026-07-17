@@ -22,6 +22,7 @@ FRAMEWORKS = (
     FrameworkName.LANGCHAIN,
     FrameworkName.LANGGRAPH,
     FrameworkName.LLAMAINDEX,
+    FrameworkName.HAYSTACK,
 )
 
 
@@ -137,7 +138,8 @@ def _markdown(comparison_id: object, reports: list[EvaluationReport]) -> str:
             "question order, and Ollama model. The changing variables are orchestration and the "
             "model adapter. LangGraph additionally permits one bounded "
             "citation-repair transition when validation fails. LlamaIndex maps the canonical "
-            "results into native TextNode and NodeWithScore objects.",
+            "results into native TextNode and NodeWithScore objects. Haystack executes native "
+            "async components and maps those same results into Haystack Documents.",
             "",
         ]
     )
