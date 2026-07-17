@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 
 from raglab.core.exceptions import (
     CollectionNotFoundError,
+    DocumentDeletionConflictError,
     DocumentNotFoundError,
     DocumentParsingError,
     DocumentValidationError,
@@ -35,7 +36,7 @@ def _status_code(error: Exception) -> int:
         (CollectionNotFoundError, DocumentNotFoundError, IngestionJobNotFoundError),
     ):
         return status.HTTP_404_NOT_FOUND
-    if isinstance(error, DuplicateDocumentError):
+    if isinstance(error, (DocumentDeletionConflictError, DuplicateDocumentError)):
         return status.HTTP_409_CONFLICT
     if isinstance(error, (DocumentValidationError, DocumentParsingError, InvalidCursorError)):
         return status.HTTP_422_UNPROCESSABLE_CONTENT

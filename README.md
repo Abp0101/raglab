@@ -188,7 +188,7 @@ All five pipelines build bounded untrusted context, request strict structured ou
 
 ### HTTP API
 
-FastAPI exposes collection creation and listing, bounded multipart PDF ingestion, durable background jobs, document metadata, pipeline capability discovery, synchronous querying, and safe SSE query progress. Endpoint examples, job semantics, event names, and status mappings are documented in [`docs/api.md`](docs/api.md).
+FastAPI exposes collection creation and listing, bounded multipart PDF ingestion, durable background jobs, document metadata and coordinated deletion, pipeline capability discovery, synchronous querying, and safe SSE query progress. Endpoint examples, deletion and job semantics, event names, and status mappings are documented in [`docs/api.md`](docs/api.md).
 
 ### Zero paid API policy
 
@@ -202,7 +202,7 @@ Measured baselines progress from the first [`Custom run`](reports/baselines/cust
 
 ## Roadmap
 
-1. Coordinated document deletion and authentication
+1. Authentication and authorization
 2. Framework-specific indexing experiments under separate benchmark configurations
 3. Local observability and failure-path integration hardening
 4. Next.js inspection and evaluation UI

@@ -9,15 +9,21 @@ from pydantic import HttpUrl
 from apps.api.dependencies import (
     get_app_settings,
     get_catalog_repository,
+    get_document_deletion_manager,
     get_ingestion_job_manager,
     get_pipeline_registry,
 )
 from raglab.core.config import Settings
 from raglab.core.exceptions import DocumentValidationError
-from raglab.core.interfaces import CatalogRepository, IngestionJobManager
+from raglab.core.interfaces import (
+    CatalogRepository,
+    DocumentDeletionManager,
+    IngestionJobManager,
+)
 from raglab.core.schemas import (
     CursorPage,
     Document,
+    DocumentDeletionResult,
     DocumentInput,
     FrameworkName,
     IngestionJob,
@@ -126,6 +132,15 @@ async def get_document(
 ) -> Document:
     """Return one document's ingestion metadata and lifecycle state."""
     return await catalog.get_document(document_id)
+
+
+@router.delete("/documents/{document_id}", response_model=DocumentDeletionResult)
+async def delete_document(
+    document_id: UUID,
+    deletion: Annotated[DocumentDeletionManager, Depends(get_document_deletion_manager)],
+) -> DocumentDeletionResult:
+    """Remove one terminal document from PostgreSQL, Qdrant, and Redis."""
+    return await deletion.delete(document_id)
 
 
 async def _document_input(

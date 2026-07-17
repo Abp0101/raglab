@@ -17,6 +17,7 @@ RAGLab exposes one framework-neutral FastAPI surface. The current endpoints are 
 | `GET` | `/ingestion-jobs/{job_id}` | Poll queued, processing, completed, or failed state |
 | `GET` | `/collections/{collection_id}/documents` | Page through document metadata |
 | `GET` | `/documents/{document_id}` | Fetch one document record |
+| `DELETE` | `/documents/{document_id}` | Remove one terminal document from every shared store |
 | `GET` | `/pipelines` | Discover implemented and planned frameworks |
 | `POST` | `/query` | Run the selected shared RAG contract |
 | `POST` | `/query/stream` | Stream safe lifecycle events and one validated result over SSE |
@@ -62,6 +63,14 @@ Pass a non-null `next_cursor` unchanged to the same endpoint to continue. Cursor
 
 The token is opaque API state, not an authorization mechanism or encrypted data. Concurrent inserts and deletes can change what a traversal observes; clients that need snapshot semantics should record results or use a future export endpoint.
 
+## Coordinated document deletion
+
+`DELETE /documents/{document_id}` removes a terminal document's dense points from Qdrant, lexical entries from Redis, and relational document plus chunk records from PostgreSQL. A successful response confirms the document and collection IDs and reports the number of relational chunks removed.
+
+Deletion first marks the PostgreSQL document as `deleting`, then retains its chunk metadata while clearing Qdrant and Redis. PostgreSQL is deleted last. The external operations are idempotent, so a request that receives HTTP 503 can be retried with the same document ID; retained relational state provides the chunk IDs and metadata needed to finish cleanup. A retry after the final relational delete returns 404 because the resource no longer exists.
+
+Documents in `pending` or `processing` state return HTTP 409 so ingestion cannot race cleanup. `ready` and `failed` documents may be deleted. PostgreSQL, Qdrant, and Redis do not share a transaction, so retrieval can temporarily observe one index without the other during an outage; the durable `deleting` state makes that partial failure visible and recoverable.
+
 ## Background ingestion
 
 The background endpoint stores the bounded upload in PostgreSQL before returning HTTP 202. A concurrency-limited local runner claims queued work and records a terminal `completed` or `failed` result. Source bytes are cleared from the job record at either terminal state. On graceful shutdown, active work is moved back to `queued`; startup resumes queued and interrupted jobs.
@@ -96,8 +105,8 @@ Expected failures use a stable envelope:
 }
 ```
 
-Validation failures return 422, missing resources 404, unavailable framework adapters 501, local provider outages 503, and malformed provider responses 502. Provider response bodies, credentials, and internal tracebacks are not included.
+Validation failures return 422, missing resources 404, active-ingestion deletion conflicts 409, unavailable framework adapters 501, local provider outages 503, and malformed provider responses 502. Provider response bodies, credentials, and internal tracebacks are not included.
 
 ## Current boundary
 
-Authentication and deletion with coordinated multi-store cleanup remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.
+Authentication and authorization remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.

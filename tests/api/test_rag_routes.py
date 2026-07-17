@@ -7,13 +7,14 @@ from apps.api.runtime import ApiServices
 from fastapi.testclient import TestClient
 
 from raglab.core.config import Settings
-from raglab.core.exceptions import CollectionNotFoundError
+from raglab.core.exceptions import CollectionNotFoundError, DocumentNotFoundError
 from raglab.core.pagination import CursorKind, decode_cursor, encode_cursor
 from raglab.core.schemas import (
     Collection,
     CollectionCreate,
     CursorPage,
     Document,
+    DocumentDeletionResult,
     DocumentInput,
     DocumentStatus,
     EvidenceStatus,
@@ -132,7 +133,10 @@ class MemoryCatalog:
         )
 
     async def get_document(self, document_id: UUID) -> Document:
-        return self.documents[document_id]
+        try:
+            return self.documents[document_id]
+        except KeyError as error:
+            raise DocumentNotFoundError(f"document {document_id} does not exist") from error
 
 
 class StubPipeline:
@@ -245,6 +249,22 @@ class MemoryJobManager:
         return None
 
 
+class MemoryDeletionManager:
+    def __init__(self, catalog: MemoryCatalog) -> None:
+        self.catalog = catalog
+
+    async def delete(self, document_id: UUID) -> DocumentDeletionResult:
+        try:
+            document = self.catalog.documents.pop(document_id)
+        except KeyError as error:
+            raise DocumentNotFoundError(f"document {document_id} does not exist") from error
+        return DocumentDeletionResult(
+            document_id=document.document_id,
+            collection_id=document.collection_id,
+            deleted_chunk_count=2,
+        )
+
+
 def make_client() -> tuple[TestClient, MemoryCatalog, StubPipeline]:
     catalog = MemoryCatalog()
     pipeline = StubPipeline()
@@ -252,6 +272,7 @@ def make_client() -> tuple[TestClient, MemoryCatalog, StubPipeline]:
         catalog=catalog,
         pipelines=PipelineRegistry({FrameworkName.CUSTOM: pipeline}),
         ingestion_jobs=MemoryJobManager(),
+        document_deletion=MemoryDeletionManager(catalog),
         readiness_probe=StubReadinessProbe(),
     )
     app = create_app(Settings(environment="test", _env_file=None), services=services)
@@ -308,6 +329,34 @@ def test_background_upload_returns_pollable_durable_job_contract() -> None:
     assert polled.status_code == 200
     assert polled.json()["file_name"] == "paper.pdf"
     assert listed.json()["items"][0]["job_id"] == accepted.json()["job_id"]
+
+
+def test_delete_document_returns_coordinated_cleanup_result() -> None:
+    client, catalog, _ = make_client()
+
+    with client:
+        collection = client.post("/collections", json={"name": "Delete papers"}).json()
+        document = Document(
+            document_id=uuid4(),
+            collection_id=UUID(collection["collection_id"]),
+            file_name="delete.pdf",
+            display_title="Delete me",
+            uploaded_at=datetime.now(UTC),
+            file_type="application/pdf",
+            content_hash="e" * 64,
+            status=DocumentStatus.READY,
+        )
+        catalog.documents[document.document_id] = document
+        response = client.delete(f"/documents/{document.document_id}")
+        missing = client.get(f"/documents/{document.document_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "document_id": str(document.document_id),
+        "collection_id": str(document.collection_id),
+        "deleted_chunk_count": 2,
+    }
+    assert missing.status_code == 404
 
 
 def test_cursor_pagination_and_scope_validation() -> None:

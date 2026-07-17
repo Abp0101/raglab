@@ -8,7 +8,11 @@ from redis.asyncio import Redis
 from raglab.chunking.registry import create_chunker
 from raglab.core.config import Settings
 from raglab.core.health import InfrastructureReadinessProbe, ReadinessProbe
-from raglab.core.interfaces import CatalogRepository, IngestionJobManager
+from raglab.core.interfaces import (
+    CatalogRepository,
+    DocumentDeletionManager,
+    IngestionJobManager,
+)
 from raglab.core.schemas import ChunkingConfig, FrameworkName
 from raglab.database import (
     SQLAlchemyCatalogRepository,
@@ -22,7 +26,11 @@ from raglab.embeddings import SentenceTransformerEmbeddingProvider
 from raglab.generation.langchain_ollama import create_ollama_structured_model_factory
 from raglab.generation.llamaindex_ollama import create_llamaindex_ollama_factory
 from raglab.generation.providers import create_llm_provider
-from raglab.ingestion import BackgroundIngestionManager, LangChainIngestionPipeline
+from raglab.ingestion import (
+    BackgroundIngestionManager,
+    CoordinatedDocumentDeletionService,
+    LangChainIngestionPipeline,
+)
 from raglab.ingestion.parsers import PyMuPDFParser
 from raglab.ingestion.pipeline import DocumentIngestionPipeline
 from raglab.ingestion.validation import PdfUploadValidator
@@ -49,6 +57,7 @@ class ApiServices:
     catalog: CatalogRepository
     pipelines: PipelineRegistry
     ingestion_jobs: IngestionJobManager
+    document_deletion: DocumentDeletionManager
     readiness_probe: ReadinessProbe
 
     async def close(self) -> None:
@@ -165,6 +174,12 @@ def build_api_services(settings: Settings) -> ApiServices:
             max_concurrency=settings.ingestion_concurrency,
             lease_seconds=settings.ingestion_lease_seconds,
             poll_seconds=settings.ingestion_poll_seconds,
+        ),
+        document_deletion=CoordinatedDocumentDeletionService(
+            document_repository=documents,
+            chunk_repository=chunks,
+            vector_indexer=vector_index,
+            sparse_indexer=sparse_index,
         ),
         readiness_probe=readiness,
     )

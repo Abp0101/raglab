@@ -71,6 +71,9 @@ class FakeDocumentRepository:
     async def set_status(self, document_id: UUID, status: DocumentStatus) -> None:
         self.status = status
 
+    async def mark_deleting(self, document_id: UUID) -> Document:
+        raise AssertionError("ingestion must not mark documents for deletion")
+
     async def delete(self, document_id: UUID) -> None:
         self.deleted = True
 

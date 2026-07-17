@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 
 from raglab.core.exceptions import (
     CollectionNotFoundError,
+    DocumentDeletionConflictError,
     DocumentNotFoundError,
     DuplicateDocumentError,
     IngestionJobNotFoundError,
@@ -452,6 +453,25 @@ class SQLAlchemyDocumentRepository:
                 .values(status=status.value, updated_at=datetime.now(UTC))
             )
 
+    async def mark_deleting(self, document_id: UUID) -> Document:
+        """Lock one document and establish a durable, retryable deletion state."""
+        async with self._sessions() as session, session.begin():
+            record = await session.scalar(
+                select(DocumentRecord).where(DocumentRecord.id == document_id).with_for_update()
+            )
+            if record is None:
+                raise DocumentNotFoundError(f"document {document_id} does not exist")
+            current = DocumentStatus(record.status)
+            if current in (DocumentStatus.PENDING, DocumentStatus.PROCESSING):
+                raise DocumentDeletionConflictError(
+                    "document ingestion must finish before deletion"
+                )
+            if current is not DocumentStatus.DELETING:
+                record.status = DocumentStatus.DELETING.value
+                record.updated_at = await _database_now(session)
+                await session.flush()
+            return _to_document(record)
+
     async def delete(self, document_id: UUID) -> None:
         async with self._sessions() as session, session.begin():
             await session.execute(delete(DocumentRecord).where(DocumentRecord.id == document_id))
@@ -478,6 +498,18 @@ class SQLAlchemyChunkRepository:
             chunk_record.id: _to_chunk(chunk_record, document) for chunk_record, document in rows
         }
         return tuple(chunks[chunk_id] for chunk_id in chunk_ids if chunk_id in chunks)
+
+    async def get_by_document(self, document_id: UUID) -> Sequence[Chunk]:
+        async with self._sessions() as session:
+            rows = (
+                await session.execute(
+                    select(ChunkRecord, DocumentRecord)
+                    .join(DocumentRecord, DocumentRecord.id == ChunkRecord.document_id)
+                    .where(ChunkRecord.document_id == document_id)
+                    .order_by(ChunkRecord.chunk_index, ChunkRecord.id)
+                )
+            ).all()
+        return tuple(_to_chunk(chunk, document) for chunk, document in rows)
 
 
 def _document_record(document: Document, now: datetime) -> DocumentRecord:

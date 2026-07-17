@@ -17,6 +17,7 @@ class DocumentStatus(StrEnum):
     PROCESSING = "processing"
     READY = "ready"
     FAILED = "failed"
+    DELETING = "deleting"
 
 
 class CollectionCreate(RAGLabModel):
@@ -191,6 +192,14 @@ class IngestionResult(RAGLabModel):
     duplicate: bool = False
     warnings: tuple[str, ...] = ()
     errors: tuple[str, ...] = ()
+
+
+class DocumentDeletionResult(RAGLabModel):
+    """Confirmation that one document was removed from every shared store."""
+
+    document_id: UUID
+    collection_id: UUID
+    deleted_chunk_count: int = Field(ge=0)
 
 
 class IngestionJobStatus(StrEnum):

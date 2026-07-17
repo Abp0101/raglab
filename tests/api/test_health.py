@@ -28,12 +28,18 @@ class NoopJobManager:
         return None
 
 
+class NoopDeletionManager:
+    async def delete(self, document_id: object) -> object:
+        raise AssertionError("health routes must not delete documents")
+
+
 def make_client(probe: StubReadinessProbe) -> TestClient:
     settings = Settings(environment="test", _env_file=None)
     services = ApiServices(
         catalog=None,  # type: ignore[arg-type]
         pipelines=PipelineRegistry({}),
         ingestion_jobs=NoopJobManager(),  # type: ignore[arg-type]
+        document_deletion=NoopDeletionManager(),  # type: ignore[arg-type]
         readiness_probe=probe,
     )
     return TestClient(create_app(settings=settings, services=services))

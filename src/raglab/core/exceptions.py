@@ -25,6 +25,10 @@ class DocumentNotFoundError(RAGLabError):
     """The requested document does not exist."""
 
 
+class DocumentDeletionConflictError(RAGLabError):
+    """A document cannot be deleted while ingestion is active."""
+
+
 class IngestionJobNotFoundError(RAGLabError):
     """The requested background ingestion job does not exist."""
 

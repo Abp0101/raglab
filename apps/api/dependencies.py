@@ -6,7 +6,11 @@ from fastapi import Request
 
 from raglab.core.config import Settings
 from raglab.core.health import ReadinessProbe
-from raglab.core.interfaces import CatalogRepository, IngestionJobManager
+from raglab.core.interfaces import (
+    CatalogRepository,
+    DocumentDeletionManager,
+    IngestionJobManager,
+)
 from raglab.pipelines import PipelineRegistry
 
 
@@ -33,3 +37,8 @@ def get_app_settings(request: Request) -> Settings:
 def get_ingestion_job_manager(request: Request) -> IngestionJobManager:
     """Return the recoverable application-scoped background ingestion runner."""
     return cast(IngestionJobManager, request.app.state.ingestion_job_manager)
+
+
+def get_document_deletion_manager(request: Request) -> DocumentDeletionManager:
+    """Return the application-scoped coordinated deletion service."""
+    return cast(DocumentDeletionManager, request.app.state.document_deletion_manager)

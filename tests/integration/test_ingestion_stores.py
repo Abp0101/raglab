@@ -10,6 +10,7 @@ from redis.asyncio import Redis
 from sqlalchemy import delete, select, update
 
 from raglab.core.config import Settings
+from raglab.core.exceptions import DocumentDeletionConflictError
 from raglab.core.pagination import CursorKind, encode_cursor
 from raglab.core.schemas import (
     Chunk,
@@ -31,6 +32,7 @@ from raglab.database.repositories import (
     SQLAlchemyIngestionJobRepository,
 )
 from raglab.database.session import create_engine, create_session_factory
+from raglab.ingestion import CoordinatedDocumentDeletionService
 from raglab.retrieval import (
     QdrantDenseRetriever,
     QdrantVectorIndexer,
@@ -387,6 +389,11 @@ async def test_document_dense_and_sparse_stores_round_trip() -> None:
             )
 
         await repository.save(document, chunks)
+        with pytest.raises(
+            DocumentDeletionConflictError,
+            match="document ingestion must finish before deletion",
+        ):
+            await repository.mark_deleting(document.document_id)
         await repository.set_status(document.document_id, DocumentStatus.READY)
         found = await repository.find_by_hash(document.collection_id, document.content_hash)
         assert found is not None
@@ -418,9 +425,19 @@ async def test_document_dense_and_sparse_stores_round_trip() -> None:
         )
         assert sparse_results[0].chunk.chunk_id == chunks[0].chunk_id
 
-        await sparse.delete(chunks)
-        await vectors.delete([chunks[0].chunk_id])
-        await repository.delete(document.document_id)
+        deletion = CoordinatedDocumentDeletionService(
+            document_repository=repository,
+            chunk_repository=chunk_repository,
+            vector_indexer=vectors,
+            sparse_indexer=sparse,
+        )
+        result = await deletion.delete(document.document_id)
+
+        assert result.deleted_chunk_count == 1
+        points, _ = await qdrant.scroll(collection_name, limit=10)
+        assert points == []
+        assert await redis.hlen(redis_key) == 0
+        assert await redis.scard(f"{key_prefix}:document:{document.document_id}:chunks") == 0
         async with sessions() as session:
             assert (
                 await session.scalar(

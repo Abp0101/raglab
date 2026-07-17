@@ -36,6 +36,7 @@ def create_app(
         application.state.catalog_repository = runtime.catalog
         application.state.pipeline_registry = runtime.pipelines
         application.state.ingestion_job_manager = runtime.ingestion_jobs
+        application.state.document_deletion_manager = runtime.document_deletion
         try:
             await runtime.ingestion_jobs.start()
             yield

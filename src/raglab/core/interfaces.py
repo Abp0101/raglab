@@ -12,6 +12,7 @@ from raglab.core.schemas import (
     CollectionCreate,
     CursorPage,
     Document,
+    DocumentDeletionResult,
     DocumentInput,
     DocumentStatus,
     Embedding,
@@ -156,6 +157,8 @@ class DocumentRepository(Protocol):
 
     async def set_status(self, document_id: UUID, status: DocumentStatus) -> None: ...
 
+    async def mark_deleting(self, document_id: UUID) -> Document: ...
+
     async def delete(self, document_id: UUID) -> None: ...
 
 
@@ -164,6 +167,15 @@ class ChunkRepository(Protocol):
     """Load context chunks from the relational source of truth."""
 
     async def get_by_ids(self, chunk_ids: Sequence[UUID]) -> Sequence[Chunk]: ...
+
+    async def get_by_document(self, document_id: UUID) -> Sequence[Chunk]: ...
+
+
+@runtime_checkable
+class DocumentDeletionManager(Protocol):
+    """Coordinate retry-safe document removal across shared stores."""
+
+    async def delete(self, document_id: UUID) -> DocumentDeletionResult: ...
 
 
 @runtime_checkable
