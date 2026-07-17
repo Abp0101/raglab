@@ -1,0 +1,39 @@
+{
+  "benchmark": "raglab-native-indexing",
+  "version": "1.0.0",
+  "dataset_version": "1.0.0",
+  "dataset_path": "datasets/evaluation/indexing_experiment_v1.jsonl",
+  "controls": {
+    "embedding_model": "deterministic-hash-v1",
+    "embedding_dimensions": 128,
+    "chunk_size": 50,
+    "chunk_overlap": 8,
+    "top_k": 1
+  },
+  "experiments": [
+    {
+      "framework": "custom",
+      "strategy": "fixed-token",
+      "index_backend": "raglab-in-memory-cosine",
+      "size_unit": "lexical-tokens"
+    },
+    {
+      "framework": "langchain",
+      "strategy": "recursive-character-token-budget",
+      "index_backend": "langchain-in-memory-vector-store",
+      "size_unit": "lexical-tokens"
+    },
+    {
+      "framework": "llamaindex",
+      "strategy": "sentence-splitter",
+      "index_backend": "llamaindex-vector-store-index",
+      "size_unit": "framework-tokens"
+    },
+    {
+      "framework": "haystack",
+      "strategy": "document-splitter-word",
+      "index_backend": "haystack-in-memory-document-store",
+      "size_unit": "words"
+    }
+  ]
+}

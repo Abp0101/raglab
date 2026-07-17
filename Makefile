@@ -1,4 +1,4 @@
-.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking build-evaluation-dataset seed-evaluation evaluate compare-frameworks smoke-ollama smoke-api check run infra-up infra-down
+.PHONY: install format lint typecheck test test-integration test-live-model benchmark-chunking benchmark-native-indexing build-evaluation-dataset seed-evaluation evaluate compare-frameworks smoke-ollama smoke-api check run infra-up infra-down
 
 PYTHON ?= python3.12
 RAGLAB_FRAMEWORK ?= custom
@@ -32,6 +32,9 @@ test-live-model:
 
 benchmark-chunking:
 	$(BIN)/python scripts/benchmark_chunking.py
+
+benchmark-native-indexing:
+	$(BIN)/python scripts/benchmark_native_indexing.py
 
 build-evaluation-dataset:
 	$(BIN)/python scripts/build_evaluation_dataset.py

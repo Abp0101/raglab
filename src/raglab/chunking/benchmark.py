@@ -112,7 +112,7 @@ def run_benchmark(
     """Run every configured strategy against every benchmark case."""
     results: list[ChunkBenchmarkResult] = []
     for case in cases:
-        document = _parsed_document(case)
+        document = parsed_document_for_case(case)
         for strategy, config in configs.items():
             chunks = tuple(create_chunker(strategy).chunk(document, config))
             results.append(_measure(case, document.pages[0], chunks, config))
@@ -130,7 +130,8 @@ def write_results(path: Path, results: Sequence[ChunkBenchmarkResult]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
-def _parsed_document(case: ChunkBenchmarkCase) -> ParsedDocument:
+def parsed_document_for_case(case: ChunkBenchmarkCase) -> ParsedDocument:
+    """Build deterministic canonical input shared by structural experiments."""
     document_id = uuid5(NAMESPACE_URL, f"raglab:chunk-benchmark:{case.case_id}")
     collection_id = uuid5(NAMESPACE_URL, "raglab:chunk-benchmark")
     return ParsedDocument(

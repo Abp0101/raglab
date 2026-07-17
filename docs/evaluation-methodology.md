@@ -74,4 +74,4 @@ The evaluation layer follows the project testing pyramid:
 - integration tests exercise local storage and ingestion independently;
 - the manual evaluation command covers the full local retrieval/reranking/Ollama path.
 
-Current gaps are statistical confidence intervals, larger real-document annotations, human adjudication, load testing, and cross-framework runs. These are recorded as future work rather than hidden behind a single aggregate score.
+Current gaps are statistical confidence intervals, larger real-document annotations, human adjudication, and load testing. These are recorded as future work rather than hidden behind a single aggregate score.

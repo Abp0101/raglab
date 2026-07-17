@@ -2,7 +2,7 @@
 
 RAGLab is a portfolio-grade platform for implementing and fairly benchmarking retrieval-augmented generation pipelines across custom Python, LangChain, LangGraph, LlamaIndex, and Haystack implementations.
 
-The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, LlamaIndex, and Haystack RAG pipelines**, a typed API, and a deterministic local evaluation harness.
+The current repository contains shared contracts, persistent ingestion, chunking, retrieval, executable **Custom, LangChain, LangGraph, LlamaIndex, and Haystack RAG pipelines**, a typed API, deterministic local evaluation, and isolated framework-native indexing experiments.
 
 ## Foundation features
 
@@ -44,6 +44,7 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - A native LlamaIndex adapter using `BaseRetriever`, `TextNode`, `NodeWithScore`, `PromptTemplate`, structured local Ollama, and callback-normalized usage
 - A native Haystack `AsyncPipeline` using custom async components, scored `Document` objects, `ChatPromptBuilder`, and structured local `OllamaChatGenerator`
 - A controlled cross-framework comparison runner that rejects paid cost or failed questions
+- Isolated Custom, LangChain, LlamaIndex, and Haystack native in-memory indexing experiments with fixed local controls
 
 ## Quick start
 
@@ -74,6 +75,7 @@ make test         # run tests with branch coverage
 make test-integration # test PostgreSQL, Qdrant, and Redis adapters
 make test-live-model  # download/load and verify the default embedding model
 make benchmark-chunking # compare chunk structure without claiming a winner
+make benchmark-native-indexing # compare isolated native indexes with deterministic free embeddings
 make build-evaluation-dataset # rebuild byte-stable synthetic PDFs and annotations
 make seed-evaluation # idempotently ingest the evaluation corpus locally
 make evaluate RAGLAB_LLM_MODEL=llama3.2:latest # evaluate Custom (default)
@@ -180,6 +182,12 @@ Ingestion can select fixed lexical-token windows, recursive character boundaries
 
 `make benchmark-chunking` compares all strategies against versioned synthetic technical and biomedical boundary cases. It reports structural measurements only; retrieval and answer-quality evaluation remains necessary before choosing a strategy.
 
+### Framework-native indexing experiments
+
+`make benchmark-native-indexing` builds separate Custom, LangChain, LlamaIndex, and Haystack in-memory indexes from the same versioned cases. It fixes a deterministic local hashing embedding, chunk target, overlap, query set, and retrieval cutoff while allowing each framework's native splitter and index abstraction to vary. This is intentionally separate from the canonical cross-framework pipeline comparison. Configuration, metrics, limitations, and reproducibility details are documented in [`docs/indexing-experiments.md`](docs/indexing-experiments.md).
+
+The first observed zero-cost result is recorded in [`reports/baselines/native-indexing-deterministic-v1.md`](reports/baselines/native-indexing-deterministic-v1.md).
+
 ### Retrieval baseline
 
 The framework-free retrieval service supports dense, sparse, and hybrid modes with explicit native and fused score provenance. It applies portable metadata filters consistently, optionally reranks candidates using a local cross-encoder, and expands linked children to larger relational parent context. The design, formulas, filtering semantics, and current BM25 scaling boundary are documented in [`docs/retrieval.md`](docs/retrieval.md).
@@ -204,8 +212,7 @@ Measured baselines progress from the first [`Custom run`](reports/baselines/cust
 
 ## Roadmap
 
-1. Framework-specific indexing experiments under separate benchmark configurations
-2. Local observability and failure-path integration hardening
-3. Next.js inspection and evaluation UI
+1. Local observability and failure-path integration hardening
+2. Next.js inspection and evaluation UI
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.
