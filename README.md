@@ -45,6 +45,7 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - A native Haystack `AsyncPipeline` using custom async components, scored `Document` objects, `ChatPromptBuilder`, and structured local `OllamaChatGenerator`
 - A controlled cross-framework comparison runner that rejects paid cost or failed questions
 - Isolated Custom, LangChain, LlamaIndex, and Haystack native in-memory indexing experiments with fixed local controls
+- Process-local Prometheus metrics, structured correlation logs, safe failure envelopes, and degraded-dependency coverage
 
 ## Quick start
 
@@ -62,8 +63,9 @@ Then open:
 - API documentation: <http://localhost:8000/docs>
 - Liveness: <http://localhost:8000/health/live>
 - Readiness: <http://localhost:8000/health/ready>
+- Local metrics: <http://localhost:8000/metrics>
 
-`/health/live` confirms the API process is responding. `/health/ready` returns HTTP 200 only when PostgreSQL, Qdrant, and Redis respond; otherwise it returns HTTP 503 with a per-service status map.
+`/health/live` confirms the API process is responding. `/health/ready` returns HTTP 200 only when PostgreSQL, Qdrant, and Redis respond; otherwise it returns HTTP 503 with a per-service status map. `/metrics` exposes bounded process-local operational signals and never sends telemetry externally.
 
 ## Development commands
 
@@ -101,7 +103,7 @@ Application runtime variables use the `RAGLAB_` prefix. `HAYSTACK_TELEMETRY_ENAB
 | `RAGLAB_LOG_LEVEL` | Python log threshold | `INFO` |
 | `RAGLAB_LOG_JSON` | Emit JSON logs | `true` |
 | `RAGLAB_CORS_ORIGINS` | JSON array of allowed web origins | `["http://localhost:3000"]` |
-| `RAGLAB_AUTH_ENABLED` | Require bearer API keys on non-health endpoints | `false` |
+| `RAGLAB_AUTH_ENABLED` | Require bearer API keys on application-data endpoints | `false` |
 | `RAGLAB_AUTH_API_KEYS` | JSON array of named keys and `viewer`, `editor`, or `admin` roles | `[]` |
 | `RAGLAB_MAX_UPLOAD_SIZE_MB` | Maximum accepted PDF size | `25` |
 | `RAGLAB_MAX_PDF_PAGES` | Maximum pages processed per PDF | `500` |
@@ -143,10 +145,11 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
                                               │
                                               └── tokenization ── Redis/BM25
 
-HTTP client ── bearer API key + RBAC ── FastAPI ── request ID + structured logging
+HTTP client ── bearer API key + RBAC ── FastAPI ── request ID + logs + local metrics
               ├── collection + document catalog ── PostgreSQL
               ├── /query ── registry ── Custom, LangChain, LangGraph, LlamaIndex, or Haystack
-              └── /health/ready checks all three stores
+              ├── /health/ready checks all three stores
+              └── /metrics exposes a process-local bounded snapshot
 ```
 
 Application code is split between the deployable API in `apps/api` and reusable, framework-independent code in `src/raglab`. RAG implementations depend on the models in `raglab.core.schemas` and protocols in `raglab.core.interfaces`, rather than importing types from another framework adapter.
@@ -200,6 +203,10 @@ All five pipelines build bounded untrusted context, request strict structured ou
 
 FastAPI exposes role-protected collection creation and listing, bounded multipart PDF ingestion, durable background jobs, document metadata and coordinated deletion, pipeline capability discovery, synchronous querying, and safe SSE query progress. Local development can explicitly disable authentication; staging and production fail closed. Endpoint examples, authorization policy, deletion and job semantics, event names, and status mappings are documented in [`docs/api.md`](docs/api.md).
 
+### Local observability
+
+Every request receives a validated correlation ID and a structured completion log. `GET /metrics` exposes low-cardinality request counters and latency histograms, sanitized error counters, durable ingestion outcomes, and the latest readiness state. Expected provider outages return a safe HTTP 503 with a retry hint; unexpected failures return a redacted HTTP 500, including after SSE headers have opened. The signal contract, failure matrix, runbook, limitations, and scale-up boundary are documented in [`docs/observability.md`](docs/observability.md) and [ADR 0010](docs/adr/0010-process-local-bounded-observability.md).
+
 ### Zero paid API policy
 
 The supported default path is fully local: Ollama generation, Sentence Transformers embeddings, cross-encoder reranking, PostgreSQL, Qdrant, and Redis. `RAGLAB_ALLOW_PAID_API_USAGE=false` blocks construction of the OpenAI-compatible adapter even if someone changes the provider name. Haystack telemetry is forcibly disabled before its imports and again at runtime. Its core package transitively installs an OpenAI client, but RAGLab never constructs an OpenAI Haystack component. The OpenAI-compatible implementation remains for portfolio completeness and is tested only with mocked HTTP; RAGLab development, tests, demos, and evaluation must not invoke metered APIs.
@@ -212,7 +219,6 @@ Measured baselines progress from the first [`Custom run`](reports/baselines/cust
 
 ## Roadmap
 
-1. Local observability and failure-path integration hardening
-2. Next.js inspection and evaluation UI
+1. Next.js inspection and evaluation UI
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.

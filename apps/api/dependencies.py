@@ -11,6 +11,7 @@ from raglab.core.interfaces import (
     DocumentDeletionManager,
     IngestionJobManager,
 )
+from raglab.core.metrics import LocalMetrics
 from raglab.pipelines import PipelineRegistry
 
 
@@ -42,3 +43,8 @@ def get_ingestion_job_manager(request: Request) -> IngestionJobManager:
 def get_document_deletion_manager(request: Request) -> DocumentDeletionManager:
     """Return the application-scoped coordinated deletion service."""
     return cast(DocumentDeletionManager, request.app.state.document_deletion_manager)
+
+
+def get_metrics(request: Request) -> LocalMetrics:
+    """Return the process-local bounded metrics registry."""
+    return cast(LocalMetrics, request.app.state.metrics)

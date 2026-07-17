@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 
 from raglab.core.exceptions import DocumentValidationError, IngestionJobNotFoundError
+from raglab.core.metrics import LocalMetrics
 from raglab.core.schemas import (
     CursorPage,
     DocumentInput,
@@ -258,10 +259,12 @@ async def test_background_manager_completes_persisted_job() -> None:
 @pytest.mark.asyncio
 async def test_background_manager_retains_safe_expected_failure() -> None:
     repository = MemoryJobRepository()
+    metrics = LocalMetrics()
     manager = BackgroundIngestionManager(
         repository,
         StubPipeline(fail=True),
         poll_seconds=0.01,
+        metrics=metrics,
     )
 
     job = await manager.submit(document())
@@ -270,6 +273,14 @@ async def test_background_manager_retains_safe_expected_failure() -> None:
     assert failed.error == IngestionJobError(
         type="DocumentValidation",
         message="invalid test PDF",
+    )
+    rendered = metrics.render_prometheus()
+    assert 'raglab_ingestion_jobs_total{outcome="queued"} 1' in rendered
+    assert 'raglab_ingestion_jobs_total{outcome="claimed"} 1' in rendered
+    assert 'raglab_ingestion_jobs_total{outcome="failed"} 1' in rendered
+    assert (
+        'raglab_errors_total{operation="ingestion_job",error_type="DocumentValidation"} 1'
+        in rendered
     )
     await manager.close()
 

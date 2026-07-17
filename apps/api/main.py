@@ -11,6 +11,7 @@ from apps.api.routes.auth import router as auth_router
 from apps.api.routes.collections import router as collections_router
 from apps.api.routes.documents import router as documents_router
 from apps.api.routes.health import router as health_router
+from apps.api.routes.metrics import router as metrics_router
 from apps.api.routes.pipelines import router as pipelines_router
 from apps.api.routes.query import router as query_router
 from apps.api.runtime import ApiServices, build_api_services
@@ -39,6 +40,7 @@ def create_app(
         application.state.pipeline_registry = runtime.pipelines
         application.state.ingestion_job_manager = runtime.ingestion_jobs
         application.state.document_deletion_manager = runtime.document_deletion
+        application.state.metrics = runtime.metrics
         try:
             await runtime.ingestion_jobs.start()
             yield
@@ -63,6 +65,7 @@ def create_app(
     application.add_middleware(RequestLoggingMiddleware)
     register_exception_handlers(application)
     application.include_router(health_router)
+    application.include_router(metrics_router)
     application.include_router(auth_router)
     application.include_router(collections_router)
     application.include_router(documents_router)

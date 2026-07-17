@@ -4,8 +4,9 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response, status
 
-from apps.api.dependencies import get_readiness_probe
+from apps.api.dependencies import get_metrics, get_readiness_probe
 from raglab.core.health import ReadinessProbe
+from raglab.core.metrics import LocalMetrics
 from raglab.core.schemas import HealthResponse, ReadinessResponse
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -21,9 +22,12 @@ async def live() -> HealthResponse:
 async def ready(
     response: Response,
     probe: Annotated[ReadinessProbe, Depends(get_readiness_probe)],
+    metrics: Annotated[LocalMetrics, Depends(get_metrics)],
 ) -> ReadinessResponse:
     """Report whether required infrastructure can accept work."""
     dependencies = await probe.check()
+    for dependency, available in dependencies.items():
+        metrics.set_dependency(dependency, available)
     is_ready = all(dependencies.values())
     if not is_ready:
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE

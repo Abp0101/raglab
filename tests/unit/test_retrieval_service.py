@@ -3,6 +3,7 @@ from uuid import uuid4
 
 import pytest
 
+from raglab.core.exceptions import ProviderUnavailableError
 from raglab.core.schemas import (
     Embedding,
     RetrievalMode,
@@ -44,6 +45,11 @@ class FakeSparseRetriever:
 
     async def retrieve(self, request: RetrievalRequest) -> Sequence[RetrievedChunk]:
         return self.results
+
+
+class FailingSparseRetriever:
+    async def retrieve(self, request: RetrievalRequest) -> Sequence[RetrievedChunk]:
+        raise ConnectionError("redis connection details must remain internal")
 
 
 class FakeReranker:
@@ -96,6 +102,26 @@ async def test_service_requires_configured_reranker_when_requested() -> None:
             RetrievalRequest(query="question", collection_id=uuid4()),
             RetrievalOptions(mode=RetrievalMode.DENSE, rerank=True),
         )
+
+
+@pytest.mark.asyncio
+async def test_service_translates_storage_failure_to_safe_provider_error() -> None:
+    service = RetrievalService(
+        embedding_provider=FakeEmbeddingProvider(),  # type: ignore[arg-type]
+        dense_retriever=FakeDenseRetriever([]),
+        sparse_retriever=FailingSparseRetriever(),
+    )
+
+    with pytest.raises(
+        ProviderUnavailableError,
+        match="retrieval provider request failed",
+    ) as captured:
+        await service.retrieve(
+            RetrievalRequest(query="question", collection_id=uuid4()),
+            RetrievalOptions(mode=RetrievalMode.SPARSE, rerank=False),
+        )
+
+    assert "redis connection details" not in str(captured.value)
 
 
 @pytest.mark.asyncio

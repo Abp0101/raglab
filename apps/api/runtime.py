@@ -1,6 +1,6 @@
 """Application-scoped construction of the local RAGLab service graph."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from qdrant_client import AsyncQdrantClient
 from redis.asyncio import Redis
@@ -14,6 +14,7 @@ from raglab.core.interfaces import (
     DocumentDeletionManager,
     IngestionJobManager,
 )
+from raglab.core.metrics import LocalMetrics
 from raglab.core.schemas import ChunkingConfig, FrameworkName
 from raglab.database import (
     SQLAlchemyCatalogRepository,
@@ -62,6 +63,7 @@ class ApiServices:
     ingestion_jobs: IngestionJobManager
     document_deletion: DocumentDeletionManager
     readiness_probe: ReadinessProbe
+    metrics: LocalMetrics = field(default_factory=LocalMetrics)
 
     async def close(self) -> None:
         await self.ingestion_jobs.close()
@@ -79,7 +81,13 @@ def build_api_services(settings: Settings) -> ApiServices:
         check_compatibility=False,
     )
     redis = Redis.from_url(str(settings.redis_dsn), decode_responses=True)
-    readiness = InfrastructureReadinessProbe(database=engine, qdrant=qdrant, redis=redis)
+    metrics = LocalMetrics()
+    readiness = InfrastructureReadinessProbe(
+        database=engine,
+        qdrant=qdrant,
+        redis=redis,
+        metrics=metrics,
+    )
 
     catalog = SQLAlchemyCatalogRepository(sessions)
     job_repository = SQLAlchemyIngestionJobRepository(sessions)
@@ -181,6 +189,7 @@ def build_api_services(settings: Settings) -> ApiServices:
             max_concurrency=settings.ingestion_concurrency,
             lease_seconds=settings.ingestion_lease_seconds,
             poll_seconds=settings.ingestion_poll_seconds,
+            metrics=metrics,
         ),
         document_deletion=CoordinatedDocumentDeletionService(
             document_repository=documents,
@@ -189,4 +198,5 @@ def build_api_services(settings: Settings) -> ApiServices:
             sparse_indexer=sparse_index,
         ),
         readiness_probe=readiness,
+        metrics=metrics,
     )

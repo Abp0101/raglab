@@ -8,6 +8,7 @@ RAGLab exposes one framework-neutral FastAPI surface. The current endpoints are 
 | --- | --- | --- |
 | `GET` | `/health/live` | Process liveness |
 | `GET` | `/health/ready` | PostgreSQL, Qdrant, and Redis readiness |
+| `GET` | `/metrics` | Bounded process-local Prometheus metrics |
 | `GET` | `/auth/me` | Inspect the authenticated subject and effective permissions |
 | `POST` | `/collections` | Create a shared logical corpus |
 | `GET` | `/collections` | Page through collections and document counts |
@@ -51,7 +52,7 @@ curl -X POST http://localhost:8000/query \
 
 ## Authentication and authorization
 
-Development defaults to `RAGLAB_AUTH_ENABLED=false`, which supplies an in-process `local-development` admin principal and keeps the zero-setup local workflow intact. Staging and production configuration is rejected at startup unless authentication is enabled and at least one API key is configured. Health endpoints remain public for container orchestration; OpenAPI documentation is public but protected operations still require credentials.
+Development defaults to `RAGLAB_AUTH_ENABLED=false`, which supplies an in-process `local-development` admin principal and keeps the zero-setup local workflow intact. Staging and production configuration is rejected at startup unless authentication is enabled and at least one API key is configured. Health endpoints and bounded local metrics remain public for container orchestration; OpenAPI documentation is public but application-data operations still require credentials.
 
 Configure one or more high-entropy keys through environment-only JSON. Never commit real values:
 
@@ -127,7 +128,7 @@ Expected failures use a stable envelope:
 }
 ```
 
-Missing or invalid authentication returns 401, insufficient permissions 403, validation failures 422, missing resources 404, active-ingestion deletion conflicts 409, unavailable framework adapters 501, local provider outages 503, and malformed provider responses 502. Provider response bodies, credentials, and internal tracebacks are not included.
+Missing or invalid authentication returns 401, insufficient permissions 403, validation failures 422, missing resources 404, active-ingestion deletion conflicts 409, unavailable framework adapters 501, local provider outages 503 with `Retry-After: 5`, and malformed provider responses 502. Unexpected exceptions return a fixed redacted 500 envelope. Provider response bodies, credentials, and internal tracebacks are not included.
 
 ## Current boundary
 

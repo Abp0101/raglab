@@ -19,7 +19,7 @@ Add optional bearer API-key authentication backed by environment configuration a
 - Each configured credential has a non-secret subject name, a `viewer`, `editor`, or `admin` role, and a secret of 32 to 256 characters.
 - The authenticator immediately hashes keys with SHA-256 and retains only digests internally. Authentication compares every configured digest using constant-time comparison; settings models redact secret values from representations.
 - `viewer` can inspect shared metadata and query; `editor` can additionally create collections and ingest; `admin` can additionally delete documents.
-- `/health/live`, `/health/ready`, and OpenAPI discovery remain public. Every application-data endpoint enforces a declared permission. `/auth/me` exposes the resolved subject, role, and permissions but never the key.
+- `/health/live`, `/health/ready`, `/metrics`, and OpenAPI discovery remain public. Every application-data endpoint enforces a declared permission. `/auth/me` exposes the resolved subject, role, and permissions but never the key.
 - Authentication failures use HTTP 401 and a Bearer challenge. Authorization failures use HTTP 403 and the shared safe error envelope.
 
 ```text

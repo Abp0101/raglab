@@ -446,6 +446,7 @@ def test_openapi_declares_bearer_security_but_health_remains_public() -> None:
     assert "RAGLabApiKey" in schema["components"]["securitySchemes"]
     assert schema["paths"]["/collections"]["post"]["security"] == [{"RAGLabApiKey": []}]
     assert "security" not in schema["paths"]["/health/live"]["get"]
+    assert "security" not in schema["paths"]["/metrics"]["get"]
 
 
 def test_cursor_pagination_and_scope_validation() -> None:

@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Sequence
 
+from raglab.core.exceptions import ProviderUnavailableError, RAGLabError
 from raglab.core.interfaces import (
     ContextExpander,
     DenseRetriever,
@@ -42,12 +43,27 @@ class RetrievalService:
         request: RetrievalRequest,
         options: RetrievalOptions,
     ) -> Sequence[RetrievedChunk]:
+        if options.rerank and self._reranker is None:
+            raise ValueError("reranking was requested but no reranker is configured")
+        try:
+            return await self._retrieve(request, options)
+        except RAGLabError:
+            raise
+        except Exception as error:
+            raise ProviderUnavailableError("retrieval provider request failed") from error
+
+    async def _retrieve(
+        self,
+        request: RetrievalRequest,
+        options: RetrievalOptions,
+    ) -> Sequence[RetrievedChunk]:
         candidate_request = request.model_copy(update={"top_k": options.candidate_k})
         candidates = await self._first_stage(candidate_request, options)
         if options.rerank:
-            if self._reranker is None:
-                raise ValueError("reranking was requested but no reranker is configured")
-            candidates = await self._reranker.rerank(request.query, candidates, options.candidate_k)
+            reranker = self._reranker
+            if reranker is None:
+                raise RuntimeError("validated reranker configuration changed during retrieval")
+            candidates = await reranker.rerank(request.query, candidates, options.candidate_k)
         if options.expand_parents and self._context_expander is not None:
             candidates = await self._context_expander.expand(candidates)
         return tuple(
