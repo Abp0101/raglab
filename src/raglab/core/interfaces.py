@@ -6,6 +6,7 @@ from typing import Protocol, runtime_checkable
 from uuid import UUID
 
 from raglab.core.schemas import (
+    AuthPrincipal,
     Chunk,
     ChunkingConfig,
     Collection,
@@ -31,6 +32,13 @@ from raglab.core.schemas import (
     RetrievalRequest,
     RetrievedChunk,
 )
+
+
+@runtime_checkable
+class Authenticator(Protocol):
+    """Resolve an opaque bearer credential into a safe caller principal."""
+
+    def authenticate(self, credential: str | None) -> AuthPrincipal: ...
 
 
 @runtime_checkable

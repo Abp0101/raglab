@@ -4,6 +4,8 @@ from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
 from raglab.core.exceptions import (
+    AuthenticationError,
+    AuthorizationError,
     CollectionNotFoundError,
     DocumentDeletionConflictError,
     DocumentNotFoundError,
@@ -25,12 +27,21 @@ def register_exception_handlers(application: FastAPI) -> None:
 
     async def handle_expected(_: Request, error: Exception) -> JSONResponse:
         code = _status_code(error)
-        return JSONResponse(status_code=code, content=public_error_payload(error))
+        headers = {"WWW-Authenticate": "Bearer"} if isinstance(error, AuthenticationError) else None
+        return JSONResponse(
+            status_code=code,
+            content=public_error_payload(error),
+            headers=headers,
+        )
 
     application.add_exception_handler(RAGLabError, handle_expected)
 
 
 def _status_code(error: Exception) -> int:
+    if isinstance(error, AuthenticationError):
+        return status.HTTP_401_UNAUTHORIZED
+    if isinstance(error, AuthorizationError):
+        return status.HTTP_403_FORBIDDEN
     if isinstance(
         error,
         (CollectionNotFoundError, DocumentNotFoundError, IngestionJobNotFoundError),

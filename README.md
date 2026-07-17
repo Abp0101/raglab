@@ -99,6 +99,8 @@ Application runtime variables use the `RAGLAB_` prefix. `HAYSTACK_TELEMETRY_ENAB
 | `RAGLAB_LOG_LEVEL` | Python log threshold | `INFO` |
 | `RAGLAB_LOG_JSON` | Emit JSON logs | `true` |
 | `RAGLAB_CORS_ORIGINS` | JSON array of allowed web origins | `["http://localhost:3000"]` |
+| `RAGLAB_AUTH_ENABLED` | Require bearer API keys on non-health endpoints | `false` |
+| `RAGLAB_AUTH_API_KEYS` | JSON array of named keys and `viewer`, `editor`, or `admin` roles | `[]` |
 | `RAGLAB_MAX_UPLOAD_SIZE_MB` | Maximum accepted PDF size | `25` |
 | `RAGLAB_MAX_PDF_PAGES` | Maximum pages processed per PDF | `500` |
 | `RAGLAB_INGESTION_CONCURRENCY` | Maximum local background ingestions | `1` |
@@ -139,7 +141,7 @@ PDF bytes ── validation ── PyMuPDF ── configurable chunks ── loc
                                               │
                                               └── tokenization ── Redis/BM25
 
-HTTP client ── FastAPI ── request ID + structured logging
+HTTP client ── bearer API key + RBAC ── FastAPI ── request ID + structured logging
               ├── collection + document catalog ── PostgreSQL
               ├── /query ── registry ── Custom, LangChain, LangGraph, LlamaIndex, or Haystack
               └── /health/ready checks all three stores
@@ -188,7 +190,7 @@ All five pipelines build bounded untrusted context, request strict structured ou
 
 ### HTTP API
 
-FastAPI exposes collection creation and listing, bounded multipart PDF ingestion, durable background jobs, document metadata and coordinated deletion, pipeline capability discovery, synchronous querying, and safe SSE query progress. Endpoint examples, deletion and job semantics, event names, and status mappings are documented in [`docs/api.md`](docs/api.md).
+FastAPI exposes role-protected collection creation and listing, bounded multipart PDF ingestion, durable background jobs, document metadata and coordinated deletion, pipeline capability discovery, synchronous querying, and safe SSE query progress. Local development can explicitly disable authentication; staging and production fail closed. Endpoint examples, authorization policy, deletion and job semantics, event names, and status mappings are documented in [`docs/api.md`](docs/api.md).
 
 ### Zero paid API policy
 
@@ -202,9 +204,8 @@ Measured baselines progress from the first [`Custom run`](reports/baselines/cust
 
 ## Roadmap
 
-1. Authentication and authorization
-2. Framework-specific indexing experiments under separate benchmark configurations
-3. Local observability and failure-path integration hardening
-4. Next.js inspection and evaluation UI
+1. Framework-specific indexing experiments under separate benchmark configurations
+2. Local observability and failure-path integration hardening
+3. Next.js inspection and evaluation UI
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.

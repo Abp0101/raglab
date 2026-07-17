@@ -13,6 +13,7 @@ from apps.api.dependencies import (
     get_ingestion_job_manager,
     get_pipeline_registry,
 )
+from apps.api.security import require_permission
 from raglab.core.config import Settings
 from raglab.core.exceptions import DocumentValidationError
 from raglab.core.interfaces import (
@@ -28,6 +29,7 @@ from raglab.core.schemas import (
     FrameworkName,
     IngestionJob,
     IngestionResult,
+    Permission,
 )
 from raglab.ingestion.validation import PdfUploadValidator
 from raglab.pipelines import PipelineRegistry
@@ -39,6 +41,7 @@ router = APIRouter(tags=["documents"])
     "/collections/{collection_id}/documents",
     response_model=IngestionResult,
     status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(Permission.INGESTION_WRITE))],
 )
 async def upload_document(
     collection_id: UUID,
@@ -66,6 +69,7 @@ async def upload_document(
     "/collections/{collection_id}/ingestion-jobs",
     response_model=IngestionJob,
     status_code=status.HTTP_202_ACCEPTED,
+    dependencies=[Depends(require_permission(Permission.INGESTION_WRITE))],
 )
 async def create_ingestion_job(
     collection_id: UUID,
@@ -88,7 +92,11 @@ async def create_ingestion_job(
     return await jobs.submit(document)
 
 
-@router.get("/ingestion-jobs/{job_id}", response_model=IngestionJob)
+@router.get(
+    "/ingestion-jobs/{job_id}",
+    response_model=IngestionJob,
+    dependencies=[Depends(require_permission(Permission.CATALOG_READ))],
+)
 async def get_ingestion_job(
     job_id: UUID,
     jobs: Annotated[IngestionJobManager, Depends(get_ingestion_job_manager)],
@@ -100,6 +108,7 @@ async def get_ingestion_job(
 @router.get(
     "/collections/{collection_id}/ingestion-jobs",
     response_model=CursorPage[IngestionJob],
+    dependencies=[Depends(require_permission(Permission.CATALOG_READ))],
 )
 async def list_ingestion_jobs(
     collection_id: UUID,
@@ -114,6 +123,7 @@ async def list_ingestion_jobs(
 @router.get(
     "/collections/{collection_id}/documents",
     response_model=CursorPage[Document],
+    dependencies=[Depends(require_permission(Permission.CATALOG_READ))],
 )
 async def list_documents(
     collection_id: UUID,
@@ -125,7 +135,11 @@ async def list_documents(
     return await catalog.list_documents(collection_id, limit=limit, cursor=cursor)
 
 
-@router.get("/documents/{document_id}", response_model=Document)
+@router.get(
+    "/documents/{document_id}",
+    response_model=Document,
+    dependencies=[Depends(require_permission(Permission.CATALOG_READ))],
+)
 async def get_document(
     document_id: UUID,
     catalog: Annotated[CatalogRepository, Depends(get_catalog_repository)],
@@ -134,7 +148,11 @@ async def get_document(
     return await catalog.get_document(document_id)
 
 
-@router.delete("/documents/{document_id}", response_model=DocumentDeletionResult)
+@router.delete(
+    "/documents/{document_id}",
+    response_model=DocumentDeletionResult,
+    dependencies=[Depends(require_permission(Permission.DOCUMENT_DELETE))],
+)
 async def delete_document(
     document_id: UUID,
     deletion: Annotated[DocumentDeletionManager, Depends(get_document_deletion_manager)],

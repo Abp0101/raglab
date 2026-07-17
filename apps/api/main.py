@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from apps.api.errors import register_exception_handlers
+from apps.api.routes.auth import router as auth_router
 from apps.api.routes.collections import router as collections_router
 from apps.api.routes.documents import router as documents_router
 from apps.api.routes.health import router as health_router
@@ -34,6 +35,7 @@ def create_app(
         application.state.settings = app_settings
         application.state.readiness_probe = probe
         application.state.catalog_repository = runtime.catalog
+        application.state.authenticator = runtime.authenticator
         application.state.pipeline_registry = runtime.pipelines
         application.state.ingestion_job_manager = runtime.ingestion_jobs
         application.state.document_deletion_manager = runtime.document_deletion
@@ -61,6 +63,7 @@ def create_app(
     application.add_middleware(RequestLoggingMiddleware)
     register_exception_handlers(application)
     application.include_router(health_router)
+    application.include_router(auth_router)
     application.include_router(collections_router)
     application.include_router(documents_router)
     application.include_router(pipelines_router)

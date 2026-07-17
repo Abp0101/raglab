@@ -6,13 +6,19 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 
 from apps.api.dependencies import get_catalog_repository
+from apps.api.security import require_permission
 from raglab.core.interfaces import CatalogRepository
-from raglab.core.schemas import Collection, CollectionCreate, CursorPage
+from raglab.core.schemas import Collection, CollectionCreate, CursorPage, Permission
 
 router = APIRouter(prefix="/collections", tags=["collections"])
 
 
-@router.post("", response_model=Collection, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=Collection,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(Permission.INGESTION_WRITE))],
+)
 async def create_collection(
     request: CollectionCreate,
     catalog: Annotated[CatalogRepository, Depends(get_catalog_repository)],
@@ -21,7 +27,11 @@ async def create_collection(
     return await catalog.create_collection(request)
 
 
-@router.get("", response_model=CursorPage[Collection])
+@router.get(
+    "",
+    response_model=CursorPage[Collection],
+    dependencies=[Depends(require_permission(Permission.CATALOG_READ))],
+)
 async def list_collections(
     catalog: Annotated[CatalogRepository, Depends(get_catalog_repository)],
     limit: Annotated[int, Query(ge=1, le=100)] = 20,
@@ -31,7 +41,11 @@ async def list_collections(
     return await catalog.list_collections(limit=limit, cursor=cursor)
 
 
-@router.get("/{collection_id}", response_model=Collection)
+@router.get(
+    "/{collection_id}",
+    response_model=Collection,
+    dependencies=[Depends(require_permission(Permission.CATALOG_READ))],
+)
 async def get_collection(
     collection_id: UUID,
     catalog: Annotated[CatalogRepository, Depends(get_catalog_repository)],

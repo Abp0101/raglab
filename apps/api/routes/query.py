@@ -10,15 +10,20 @@ from fastapi.responses import StreamingResponse
 
 from apps.api.dependencies import get_catalog_repository, get_pipeline_registry
 from apps.api.errors import public_error_payload
+from apps.api.security import require_permission
 from raglab.core.exceptions import RAGLabError
 from raglab.core.interfaces import CatalogRepository
-from raglab.core.schemas import QueryRequest, RAGResponse
+from raglab.core.schemas import Permission, QueryRequest, RAGResponse
 from raglab.pipelines import PipelineRegistry
 
 router = APIRouter(tags=["query"])
 
 
-@router.post("/query", response_model=RAGResponse)
+@router.post(
+    "/query",
+    response_model=RAGResponse,
+    dependencies=[Depends(require_permission(Permission.QUERY_EXECUTE))],
+)
 async def query(
     request: QueryRequest,
     catalog: Annotated[CatalogRepository, Depends(get_catalog_repository)],
@@ -38,6 +43,7 @@ async def query(
             "description": "Lifecycle events followed by one validated RAG response.",
         }
     },
+    dependencies=[Depends(require_permission(Permission.QUERY_EXECUTE))],
 )
 async def stream_query(
     request: QueryRequest,

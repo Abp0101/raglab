@@ -8,6 +8,7 @@ RAGLab exposes one framework-neutral FastAPI surface. The current endpoints are 
 | --- | --- | --- |
 | `GET` | `/health/live` | Process liveness |
 | `GET` | `/health/ready` | PostgreSQL, Qdrant, and Redis readiness |
+| `GET` | `/auth/me` | Inspect the authenticated subject and effective permissions |
 | `POST` | `/collections` | Create a shared logical corpus |
 | `GET` | `/collections` | Page through collections and document counts |
 | `GET` | `/collections/{collection_id}` | Fetch one collection |
@@ -47,6 +48,27 @@ curl -X POST http://localhost:8000/query \
 ```
 
 `custom`, `langchain`, `langgraph`, `llamaindex`, and `haystack` are executable. `/pipelines` marks all five target frameworks available. LangGraph reports `agentic: true`; selecting an unregistered implementation returns HTTP 501.
+
+## Authentication and authorization
+
+Development defaults to `RAGLAB_AUTH_ENABLED=false`, which supplies an in-process `local-development` admin principal and keeps the zero-setup local workflow intact. Staging and production configuration is rejected at startup unless authentication is enabled and at least one API key is configured. Health endpoints remain public for container orchestration; OpenAPI documentation is public but protected operations still require credentials.
+
+Configure one or more high-entropy keys through environment-only JSON. Never commit real values:
+
+```dotenv
+RAGLAB_AUTH_ENABLED=true
+RAGLAB_AUTH_API_KEYS=[{"name":"local-admin","role":"admin","key":"replace-with-at-least-32-random-characters"}]
+```
+
+Send a configured value as `Authorization: Bearer REPLACE_WITH_KEY`. `GET /auth/me` returns the key name as the subject, its role, and effective permissions without returning credential material. The authenticator converts configured keys to SHA-256 digests at startup, retains only those digests internally, and compares presented credentials in constant time. Pydantic treats the environment values as secrets and redacts them from settings representations.
+
+| Role | Read catalog and jobs | Query | Create collections and ingest | Delete documents |
+| --- | --- | --- | --- | --- |
+| `viewer` | Yes | Yes | No | No |
+| `editor` | Yes | Yes | Yes | No |
+| `admin` | Yes | Yes | Yes | Yes |
+
+Missing or invalid credentials return HTTP 401 with `WWW-Authenticate: Bearer`; valid credentials without the required permission return HTTP 403. Authorization is currently deployment-wide rather than collection- or tenant-scoped. Updating or revoking a configured key requires changing the environment setting and restarting API processes.
 
 ## Cursor pagination
 
@@ -105,8 +127,8 @@ Expected failures use a stable envelope:
 }
 ```
 
-Validation failures return 422, missing resources 404, active-ingestion deletion conflicts 409, unavailable framework adapters 501, local provider outages 503, and malformed provider responses 502. Provider response bodies, credentials, and internal tracebacks are not included.
+Missing or invalid authentication returns 401, insufficient permissions 403, validation failures 422, missing resources 404, active-ingestion deletion conflicts 409, unavailable framework adapters 501, local provider outages 503, and malformed provider responses 502. Provider response bodies, credentials, and internal tracebacks are not included.
 
 ## Current boundary
 
-Authentication and authorization remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.
+Per-collection ownership, multi-tenant isolation, browser login sessions, and external identity-provider integration remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.

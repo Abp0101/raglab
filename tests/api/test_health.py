@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from raglab.core.config import Settings
 from raglab.pipelines import PipelineRegistry
+from raglab.security import ApiKeyAuthenticator
 
 
 class StubReadinessProbe:
@@ -37,6 +38,7 @@ def make_client(probe: StubReadinessProbe) -> TestClient:
     settings = Settings(environment="test", _env_file=None)
     services = ApiServices(
         catalog=None,  # type: ignore[arg-type]
+        authenticator=ApiKeyAuthenticator(enabled=False, credentials=[]),
         pipelines=PipelineRegistry({}),
         ingestion_jobs=NoopJobManager(),  # type: ignore[arg-type]
         document_deletion=NoopDeletionManager(),  # type: ignore[arg-type]

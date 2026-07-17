@@ -55,8 +55,11 @@ from raglab.core.schemas.query import (
     RetrievedChunk,
     UsageMetrics,
 )
+from raglab.core.schemas.security import AuthPrincipal, AuthRole, Permission
 
 __all__ = [
+    "AuthPrincipal",
+    "AuthRole",
     "Chunk",
     "ChunkingConfig",
     "ChunkingStrategy",
@@ -94,6 +97,7 @@ __all__ = [
     "LatencyMetrics",
     "MetadataFilter",
     "ParsedDocument",
+    "Permission",
     "PipelineCapabilities",
     "PipelineConfig",
     "PipelineSummary",

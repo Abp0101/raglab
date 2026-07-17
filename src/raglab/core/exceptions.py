@@ -5,6 +5,14 @@ class RAGLabError(Exception):
     """Base class for expected application failures."""
 
 
+class AuthenticationError(RAGLabError):
+    """A caller did not present a valid credential."""
+
+
+class AuthorizationError(RAGLabError):
+    """An authenticated caller lacks a required permission."""
+
+
 class DocumentValidationError(RAGLabError):
     """An uploaded document failed validation."""
 

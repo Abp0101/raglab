@@ -9,6 +9,7 @@ from raglab.chunking.registry import create_chunker
 from raglab.core.config import Settings
 from raglab.core.health import InfrastructureReadinessProbe, ReadinessProbe
 from raglab.core.interfaces import (
+    Authenticator,
     CatalogRepository,
     DocumentDeletionManager,
     IngestionJobManager,
@@ -48,6 +49,7 @@ from raglab.retrieval import RetrievalService
 from raglab.retrieval.parent_expansion import ParentChildContextExpander
 from raglab.retrieval.qdrant_index import QdrantDenseRetriever, QdrantVectorIndexer
 from raglab.retrieval.redis_bm25 import RedisBM25Indexer, RedisBM25Retriever
+from raglab.security import ApiKeyAuthenticator
 
 
 @dataclass(slots=True)
@@ -55,6 +57,7 @@ class ApiServices:
     """Dependencies retained for the full FastAPI process lifetime."""
 
     catalog: CatalogRepository
+    authenticator: Authenticator
     pipelines: PipelineRegistry
     ingestion_jobs: IngestionJobManager
     document_deletion: DocumentDeletionManager
@@ -159,6 +162,10 @@ def build_api_services(settings: Settings) -> ApiServices:
     )
     return ApiServices(
         catalog=catalog,
+        authenticator=ApiKeyAuthenticator(
+            enabled=settings.auth_enabled,
+            credentials=settings.auth_api_keys,
+        ),
         pipelines=PipelineRegistry(
             {
                 FrameworkName.CUSTOM: custom,

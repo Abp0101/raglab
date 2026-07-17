@@ -6,10 +6,11 @@ from apps.api.main import create_app
 from apps.api.runtime import ApiServices
 from fastapi.testclient import TestClient
 
-from raglab.core.config import Settings
+from raglab.core.config import ApiKeyCredentialSettings, Settings
 from raglab.core.exceptions import CollectionNotFoundError, DocumentNotFoundError
 from raglab.core.pagination import CursorKind, decode_cursor, encode_cursor
 from raglab.core.schemas import (
+    AuthRole,
     Collection,
     CollectionCreate,
     CursorPage,
@@ -29,6 +30,11 @@ from raglab.core.schemas import (
     RAGResponse,
 )
 from raglab.pipelines import PipelineRegistry
+from raglab.security import ApiKeyAuthenticator
+
+VIEWER_KEY = "viewer-key-that-is-at-least-32-characters"
+EDITOR_KEY = "editor-key-that-is-at-least-32-characters"
+ADMIN_KEY = "admin-key-that-is-at-least-32-characters"
 
 
 class StubReadinessProbe:
@@ -265,17 +271,24 @@ class MemoryDeletionManager:
         )
 
 
-def make_client() -> tuple[TestClient, MemoryCatalog, StubPipeline]:
+def make_client(
+    settings: Settings | None = None,
+) -> tuple[TestClient, MemoryCatalog, StubPipeline]:
+    app_settings = settings or Settings(environment="test", _env_file=None)
     catalog = MemoryCatalog()
     pipeline = StubPipeline()
     services = ApiServices(
         catalog=catalog,
+        authenticator=ApiKeyAuthenticator(
+            enabled=app_settings.auth_enabled,
+            credentials=app_settings.auth_api_keys,
+        ),
         pipelines=PipelineRegistry({FrameworkName.CUSTOM: pipeline}),
         ingestion_jobs=MemoryJobManager(),
         document_deletion=MemoryDeletionManager(catalog),
         readiness_probe=StubReadinessProbe(),
     )
-    app = create_app(Settings(environment="test", _env_file=None), services=services)
+    app = create_app(app_settings, services=services)
     return TestClient(app), catalog, pipeline
 
 
@@ -357,6 +370,82 @@ def test_delete_document_returns_coordinated_cleanup_result() -> None:
         "deleted_chunk_count": 2,
     }
     assert missing.status_code == 404
+
+
+def test_authentication_and_role_permissions_protect_routes() -> None:
+    settings = Settings(
+        environment="test",
+        auth_enabled=True,
+        auth_api_keys=[
+            ApiKeyCredentialSettings(name="test-viewer", role=AuthRole.VIEWER, key=VIEWER_KEY),
+            ApiKeyCredentialSettings(name="test-editor", role=AuthRole.EDITOR, key=EDITOR_KEY),
+            ApiKeyCredentialSettings(name="test-admin", role=AuthRole.ADMIN, key=ADMIN_KEY),
+        ],
+        _env_file=None,
+    )
+    client, catalog, _ = make_client(settings)
+
+    with client:
+        health = client.get("/health/live")
+        missing = client.get("/pipelines")
+        invalid = client.get("/pipelines", headers={"Authorization": "Bearer invalid"})
+        viewer_headers = {"Authorization": f"Bearer {VIEWER_KEY}"}
+        viewer_read = client.get("/pipelines", headers=viewer_headers)
+        viewer_write = client.post(
+            "/collections",
+            json={"name": "Denied"},
+            headers=viewer_headers,
+        )
+        editor_headers = {"Authorization": f"Bearer {EDITOR_KEY}"}
+        created = client.post(
+            "/collections",
+            json={"name": "Authorized"},
+            headers=editor_headers,
+        )
+        document = Document(
+            document_id=uuid4(),
+            collection_id=UUID(created.json()["collection_id"]),
+            file_name="protected.pdf",
+            display_title="Protected",
+            uploaded_at=datetime.now(UTC),
+            file_type="application/pdf",
+            content_hash="a" * 64,
+            status=DocumentStatus.READY,
+        )
+        catalog.documents[document.document_id] = document
+        editor_delete = client.delete(
+            f"/documents/{document.document_id}",
+            headers=editor_headers,
+        )
+        admin_headers = {"Authorization": f"Bearer {ADMIN_KEY}"}
+        admin_delete = client.delete(
+            f"/documents/{document.document_id}",
+            headers=admin_headers,
+        )
+        identity = client.get("/auth/me", headers=viewer_headers)
+
+    assert health.status_code == 200
+    assert missing.status_code == 401
+    assert missing.headers["WWW-Authenticate"] == "Bearer"
+    assert invalid.status_code == 401
+    assert viewer_read.status_code == 200
+    assert viewer_write.status_code == 403
+    assert created.status_code == 201
+    assert editor_delete.status_code == 403
+    assert admin_delete.status_code == 200
+    assert identity.json()["subject"] == "test-viewer"
+    assert identity.json()["role"] == "viewer"
+
+
+def test_openapi_declares_bearer_security_but_health_remains_public() -> None:
+    client, _, _ = make_client()
+
+    with client:
+        schema = client.get("/openapi.json").json()
+
+    assert "RAGLabApiKey" in schema["components"]["securitySchemes"]
+    assert schema["paths"]["/collections"]["post"]["security"] == [{"RAGLabApiKey": []}]
+    assert "security" not in schema["paths"]["/health/live"]["get"]
 
 
 def test_cursor_pagination_and_scope_validation() -> None:
