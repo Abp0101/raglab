@@ -1,12 +1,13 @@
+import asyncio
 from collections.abc import Sequence
 from contextlib import suppress
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
 from qdrant_client import AsyncQdrantClient
 from redis.asyncio import Redis
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 
 from raglab.core.config import Settings
 from raglab.core.schemas import (
@@ -89,9 +90,12 @@ async def test_persistent_ingestion_job_clears_upload_after_completion() -> None
             )
         )
 
-        claimed = await jobs.claim(queued.job_id)
+        owner_id = uuid4()
+        claimed = await jobs.claim_next(owner_id, timedelta(seconds=30))
         assert claimed is not None
+        assert claimed.job_id == queued.job_id
         assert (await jobs.get(queued.job_id)).status is IngestionJobStatus.PROCESSING
+        assert (await jobs.get(queued.job_id)).attempt_count == 1
 
         result = IngestionResult(
             document_id=uuid4(),
@@ -103,7 +107,7 @@ async def test_persistent_ingestion_job_clears_upload_after_completion() -> None
             chunking_strategy="integration",
             embedding_model="local",
         )
-        await jobs.complete(queued.job_id, result)
+        assert await jobs.complete(queued.job_id, owner_id, result) is True
         completed = await jobs.get(queued.job_id)
 
         assert completed.status is IngestionJobStatus.COMPLETED
@@ -112,6 +116,104 @@ async def test_persistent_ingestion_job_clears_upload_after_completion() -> None
             record = await session.get(IngestionJobRecord, queued.job_id)
             assert record is not None
             assert record.content is None
+            assert record.lease_owner is None
+            assert record.lease_expires_at is None
+    finally:
+        if collection_id is not None:
+            with suppress(Exception):
+                async with sessions() as session, session.begin():
+                    await session.execute(
+                        delete(CollectionRecord).where(CollectionRecord.id == collection_id)
+                    )
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_expired_postgres_lease_is_reclaimed_once() -> None:
+    settings = Settings(_env_file=None)
+    engine = create_engine(settings.postgres_dsn)
+    sessions = create_session_factory(engine)
+    catalog = SQLAlchemyCatalogRepository(sessions)
+    jobs = SQLAlchemyIngestionJobRepository(sessions)
+    collection_id = None
+
+    try:
+        collection = await catalog.create_collection(CollectionCreate(name="Lease integration"))
+        collection_id = collection.collection_id
+        queued = await jobs.create(
+            DocumentInput(
+                file_name="leased.pdf",
+                content=b"%PDF-lease",
+                collection_id=collection.collection_id,
+            )
+        )
+        first_owner = uuid4()
+        second_owner = uuid4()
+        first = await jobs.claim_next(first_owner, timedelta(seconds=30))
+        assert first is not None
+        async with sessions() as session, session.begin():
+            await session.execute(
+                update(IngestionJobRecord)
+                .where(IngestionJobRecord.id == queued.job_id)
+                .values(lease_expires_at=datetime.now(UTC) - timedelta(seconds=1))
+            )
+
+        second = await jobs.claim_next(second_owner, timedelta(seconds=30))
+
+        assert second is not None
+        assert second.job_id == queued.job_id
+        assert second.attempt_count == 2
+        result = IngestionResult(
+            document_id=uuid4(),
+            collection_id=collection.collection_id,
+            page_count=1,
+            chunk_count=1,
+            duration_ms=1,
+            parser="integration",
+            chunking_strategy="integration",
+            embedding_model="local",
+        )
+        assert await jobs.complete(queued.job_id, first_owner, result) is False
+        assert await jobs.complete(queued.job_id, second_owner, result) is True
+    finally:
+        if collection_id is not None:
+            with suppress(Exception):
+                async with sessions() as session, session.begin():
+                    await session.execute(
+                        delete(CollectionRecord).where(CollectionRecord.id == collection_id)
+                    )
+        await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_concurrent_postgres_workers_claim_one_job_once() -> None:
+    settings = Settings(_env_file=None)
+    engine = create_engine(settings.postgres_dsn)
+    sessions = create_session_factory(engine)
+    catalog = SQLAlchemyCatalogRepository(sessions)
+    jobs = SQLAlchemyIngestionJobRepository(sessions)
+    collection_id = None
+
+    try:
+        collection = await catalog.create_collection(CollectionCreate(name="Claim integration"))
+        collection_id = collection.collection_id
+        queued = await jobs.create(
+            DocumentInput(
+                file_name="competing.pdf",
+                content=b"%PDF-competing",
+                collection_id=collection.collection_id,
+            )
+        )
+
+        claims = await asyncio.gather(
+            jobs.claim_next(uuid4(), timedelta(seconds=30)),
+            jobs.claim_next(uuid4(), timedelta(seconds=30)),
+        )
+
+        claimed = [claim for claim in claims if claim is not None]
+        assert len(claimed) == 1
+        assert claimed[0].job_id == queued.job_id
+        assert claimed[0].attempt_count == 1
     finally:
         if collection_id is not None:
             with suppress(Exception):

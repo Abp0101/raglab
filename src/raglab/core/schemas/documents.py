@@ -218,5 +218,16 @@ class IngestionJob(RAGLabModel):
     status: IngestionJobStatus
     created_at: datetime
     updated_at: datetime
+    attempt_count: int = Field(default=0, ge=0)
+    lease_expires_at: datetime | None = None
     result: IngestionResult | None = None
     error: IngestionJobError | None = None
+
+
+class IngestionJobClaim(RAGLabModel):
+    """Owner-bound work item returned by the durable job queue."""
+
+    job_id: UUID
+    document: DocumentInput
+    attempt_count: int = Field(ge=1)
+    lease_expires_at: datetime

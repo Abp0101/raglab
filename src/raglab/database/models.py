@@ -94,7 +94,15 @@ class IngestionJobRecord(TimestampMixin, Base):
     """Durable queued upload, cleared of source bytes after terminal completion."""
 
     __tablename__ = "ingestion_jobs"
-    __table_args__ = (Index("ix_ingestion_jobs_collection_status", "collection_id", "status"),)
+    __table_args__ = (
+        Index("ix_ingestion_jobs_collection_status", "collection_id", "status"),
+        Index(
+            "ix_ingestion_jobs_claimable",
+            "status",
+            "lease_expires_at",
+            "created_at",
+        ),
+    )
 
     id: Mapped[UUID] = mapped_column(SQLUuid(), primary_key=True)
     collection_id: Mapped[UUID] = mapped_column(
@@ -108,3 +116,8 @@ class IngestionJobRecord(TimestampMixin, Base):
     result: Mapped[dict[str, object] | None] = mapped_column(JSON(), nullable=True)
     error_type: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer(), default=0)
+    lease_owner: Mapped[UUID | None] = mapped_column(SQLUuid(), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )

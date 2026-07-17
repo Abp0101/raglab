@@ -2,12 +2,13 @@
 
 import hashlib
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.sql.elements import ColumnElement
 
 from raglab.core.exceptions import (
     CollectionNotFoundError,
@@ -24,6 +25,7 @@ from raglab.core.schemas import (
     DocumentMetadata,
     DocumentStatus,
     IngestionJob,
+    IngestionJobClaim,
     IngestionJobError,
     IngestionJobStatus,
     IngestionResult,
@@ -122,6 +124,9 @@ class SQLAlchemyIngestionJobRepository:
             result=None,
             error_type=None,
             error_message=None,
+            attempt_count=0,
+            lease_owner=None,
+            lease_expires_at=None,
             created_at=now,
             updated_at=now,
         )
@@ -137,107 +142,154 @@ class SQLAlchemyIngestionJobRepository:
             raise IngestionJobNotFoundError(f"ingestion job {job_id} does not exist")
         return _to_ingestion_job(record)
 
-    async def list_recoverable(self) -> Sequence[UUID]:
+    async def claim_next(
+        self,
+        owner_id: UUID,
+        lease_duration: timedelta,
+    ) -> IngestionJobClaim | None:
+        """Atomically claim the oldest queued or expired job for one worker."""
         async with self._sessions() as session, session.begin():
-            records = (
-                await session.scalars(
-                    select(IngestionJobRecord)
-                    .where(
-                        IngestionJobRecord.status.in_(
-                            [
-                                IngestionJobStatus.QUEUED.value,
-                                IngestionJobStatus.PROCESSING.value,
-                            ]
-                        ),
-                        IngestionJobRecord.content.is_not(None),
-                    )
-                    .order_by(IngestionJobRecord.created_at, IngestionJobRecord.id)
-                    .with_for_update(skip_locked=True)
-                )
-            ).all()
-            now = datetime.now(UTC)
-            for record in records:
-                record.status = IngestionJobStatus.QUEUED.value
-                record.updated_at = now
-        return tuple(record.id for record in records)
-
-    async def claim(self, job_id: UUID) -> DocumentInput | None:
-        async with self._sessions() as session, session.begin():
+            now = await _database_now(session)
             record = await session.scalar(
                 select(IngestionJobRecord)
-                .where(IngestionJobRecord.id == job_id)
+                .where(
+                    IngestionJobRecord.content.is_not(None),
+                    or_(
+                        IngestionJobRecord.status == IngestionJobStatus.QUEUED.value,
+                        and_(
+                            IngestionJobRecord.status == IngestionJobStatus.PROCESSING.value,
+                            or_(
+                                IngestionJobRecord.lease_expires_at.is_(None),
+                                IngestionJobRecord.lease_expires_at <= now,
+                            ),
+                        ),
+                    ),
+                )
+                .order_by(IngestionJobRecord.created_at, IngestionJobRecord.id)
+                .limit(1)
                 .with_for_update(skip_locked=True)
             )
-            if (
-                record is None
-                or record.status != IngestionJobStatus.QUEUED.value
-                or record.content is None
-            ):
+            if record is None or record.content is None:
                 return None
             record.status = IngestionJobStatus.PROCESSING.value
-            record.updated_at = datetime.now(UTC)
-            return DocumentInput(
-                file_name=record.file_name,
-                content=record.content,
-                collection_id=record.collection_id,
-                display_title=record.display_title,
-                source_url=record.source_url,
+            record.attempt_count += 1
+            record.lease_owner = owner_id
+            record.lease_expires_at = now + lease_duration
+            record.updated_at = now
+            return IngestionJobClaim(
+                job_id=record.id,
+                document=DocumentInput(
+                    file_name=record.file_name,
+                    content=record.content,
+                    collection_id=record.collection_id,
+                    display_title=record.display_title,
+                    source_url=record.source_url,
+                ),
+                attempt_count=record.attempt_count,
+                lease_expires_at=record.lease_expires_at,
             )
 
-    async def complete(self, job_id: UUID, result: IngestionResult) -> None:
-        await self._finish(
+    async def renew(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        lease_duration: timedelta,
+    ) -> bool:
+        """Extend a live lease only while it is still owned and unexpired."""
+        async with self._sessions() as session, session.begin():
+            now = await _database_now(session)
+            updated_id = await session.scalar(
+                update(IngestionJobRecord)
+                .where(*_active_lease_conditions(job_id, owner_id, now))
+                .values(lease_expires_at=now + lease_duration, updated_at=now)
+                .returning(IngestionJobRecord.id)
+            )
+        return updated_id is not None
+
+    async def complete(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        result: IngestionResult,
+    ) -> bool:
+        return await self._finish(
             job_id,
+            owner_id,
             status=IngestionJobStatus.COMPLETED,
             result=result.model_dump(mode="json"),
         )
 
-    async def fail(self, job_id: UUID, error_type: str, message: str) -> None:
-        await self._finish(
+    async def fail(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        error_type: str,
+        message: str,
+    ) -> bool:
+        return await self._finish(
             job_id,
+            owner_id,
             status=IngestionJobStatus.FAILED,
             error_type=error_type,
             error_message=message,
         )
 
-    async def requeue(self, job_id: UUID) -> None:
+    async def release(self, job_id: UUID, owner_id: UUID) -> bool:
+        """Return owned work to the queue during graceful cancellation."""
         async with self._sessions() as session, session.begin():
-            await session.execute(
+            now = await _database_now(session)
+            updated_id = await session.scalar(
                 update(IngestionJobRecord)
                 .where(
                     IngestionJobRecord.id == job_id,
                     IngestionJobRecord.status == IngestionJobStatus.PROCESSING.value,
+                    IngestionJobRecord.lease_owner == owner_id,
                 )
                 .values(
                     status=IngestionJobStatus.QUEUED.value,
-                    updated_at=datetime.now(UTC),
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    updated_at=now,
                 )
+                .returning(IngestionJobRecord.id)
             )
+        return updated_id is not None
 
     async def _finish(
         self,
         job_id: UUID,
+        owner_id: UUID,
         *,
         status: IngestionJobStatus,
         result: dict[str, object] | None = None,
         error_type: str | None = None,
         error_message: str | None = None,
-    ) -> None:
+    ) -> bool:
         async with self._sessions() as session, session.begin():
+            now = await _database_now(session)
             updated_id = await session.scalar(
                 update(IngestionJobRecord)
-                .where(IngestionJobRecord.id == job_id)
+                .where(*_active_lease_conditions(job_id, owner_id, now))
                 .values(
                     status=status.value,
                     result=result,
                     error_type=error_type,
                     error_message=error_message,
                     content=None,
-                    updated_at=datetime.now(UTC),
+                    lease_owner=None,
+                    lease_expires_at=None,
+                    updated_at=now,
                 )
                 .returning(IngestionJobRecord.id)
             )
             if updated_id is None:
-                raise IngestionJobNotFoundError(f"ingestion job {job_id} does not exist")
+                exists = await session.scalar(
+                    select(IngestionJobRecord.id).where(IngestionJobRecord.id == job_id)
+                )
+                if exists is None:
+                    raise IngestionJobNotFoundError(f"ingestion job {job_id} does not exist")
+                return False
+        return True
 
 
 class SQLAlchemyDocumentRepository:
@@ -347,6 +399,8 @@ def _to_ingestion_job(record: IngestionJobRecord) -> IngestionJob:
         status=IngestionJobStatus(record.status),
         created_at=record.created_at,
         updated_at=record.updated_at,
+        attempt_count=record.attempt_count,
+        lease_expires_at=record.lease_expires_at,
         result=(IngestionResult.model_validate(record.result) if record.result else None),
         error=(
             IngestionJobError(type=record.error_type, message=record.error_message)
@@ -354,6 +408,29 @@ def _to_ingestion_job(record: IngestionJobRecord) -> IngestionJob:
             else None
         ),
     )
+
+
+def _active_lease_conditions(
+    job_id: UUID,
+    owner_id: UUID,
+    now: datetime,
+) -> tuple[ColumnElement[bool], ...]:
+    """Prevent expired or superseded workers from mutating terminal state."""
+    return (
+        IngestionJobRecord.id == job_id,
+        IngestionJobRecord.status == IngestionJobStatus.PROCESSING.value,
+        IngestionJobRecord.lease_owner == owner_id,
+        IngestionJobRecord.lease_expires_at.is_not(None),
+        IngestionJobRecord.lease_expires_at > now,
+    )
+
+
+async def _database_now(session: AsyncSession) -> datetime:
+    """Use one authoritative clock for lease acquisition and expiry decisions."""
+    value = await session.scalar(select(func.now()))
+    if not isinstance(value, datetime):
+        raise RuntimeError("database did not return a timestamp")
+    return value
 
 
 def _chunk_record(chunk: Chunk, now: datetime) -> ChunkRecord:

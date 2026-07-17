@@ -32,6 +32,7 @@ The current repository contains shared contracts, persistent ingestion, chunking
 - Grounded structured answers, deterministic citation checks, prompt-injection boundaries, and refusal rules
 - Collection creation, bounded PDF upload, document listing, pipeline discovery, and shared query endpoints
 - Durable background-ingestion jobs with bounded local concurrency and restart recovery
+- PostgreSQL-backed ingestion leases with atomic multi-worker claims, heartbeats, crash recovery, and stale-owner protection
 - Server-Sent Event query progress with citation-validated terminal answers
 - Stable safe-error envelopes for validation, missing resources, unavailable frameworks, and providers
 - A runtime guard that disables metered OpenAI-compatible generation unless explicitly opted in
@@ -100,6 +101,8 @@ Application runtime variables use the `RAGLAB_` prefix. `HAYSTACK_TELEMETRY_ENAB
 | `RAGLAB_MAX_UPLOAD_SIZE_MB` | Maximum accepted PDF size | `25` |
 | `RAGLAB_MAX_PDF_PAGES` | Maximum pages processed per PDF | `500` |
 | `RAGLAB_INGESTION_CONCURRENCY` | Maximum local background ingestions | `1` |
+| `RAGLAB_INGESTION_LEASE_SECONDS` | Ownership window renewed during active ingestion | `60` |
+| `RAGLAB_INGESTION_POLL_SECONDS` | Idle PostgreSQL queue polling interval | `1` |
 | `RAGLAB_EMBEDDING_MODEL` | Local Sentence Transformers model | `sentence-transformers/all-MiniLM-L6-v2` |
 | `RAGLAB_EMBEDDING_BATCH_SIZE` | Local embedding batch size | `32` |
 | `RAGLAB_RERANKER_MODEL` | Local cross-encoder reranker | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
@@ -198,9 +201,10 @@ Measured baselines progress from the first [`Custom run`](reports/baselines/cust
 
 ## Roadmap
 
-1. Distributed job leases, pagination, deletion, and authentication
-2. Framework-specific indexing experiments under separate benchmark configurations
-3. Local observability and failure-path integration hardening
-4. Next.js inspection and evaluation UI
+1. Cursor pagination for collections, documents, and jobs
+2. Coordinated document deletion and authentication
+3. Framework-specific indexing experiments under separate benchmark configurations
+4. Local observability and failure-path integration hardening
+5. Next.js inspection and evaluation UI
 
 Cross-framework reports use the exact same versioned dataset and declared configuration. They are measurements of those runs, not framework-superiority claims.

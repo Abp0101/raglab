@@ -50,7 +50,9 @@ curl -X POST http://localhost:8000/query \
 
 The background endpoint stores the bounded upload in PostgreSQL before returning HTTP 202. A concurrency-limited local runner claims queued work and records a terminal `completed` or `failed` result. Source bytes are cleared from the job record at either terminal state. On graceful shutdown, active work is moved back to `queued`; startup resumes queued and interrupted jobs.
 
-The runner is intentionally local and defaults to one concurrent ingestion. This milestone supports a single Uvicorn worker. A later deployment milestone should introduce leases or a dedicated Redis-backed worker queue before enabling multiple API workers, because process-local task ownership is not a distributed scheduler.
+Each API process runs a bounded number of pollers and competes for jobs through PostgreSQL `FOR UPDATE SKIP LOCKED`. A claim records an opaque worker owner, increments the attempt count, and receives an expiring lease. Active work renews its lease every third of the configured ownership window. Graceful shutdown releases owned work immediately; a crashed worker's job becomes claimable after expiry. Completion and failure updates require the current, unexpired owner, preventing a stale worker from overwriting a newer attempt.
+
+The queue provides at-least-once execution, not exactly-once execution. A crash after indexing but before job completion can cause a retry; deterministic document IDs, duplicate checks, unique constraints, and ingestion compensation limit the effect, but PostgreSQL, Qdrant, and Redis do not share one transaction. Public job responses expose `attempt_count` and `lease_expires_at` for operational diagnosis without revealing worker identity.
 
 ## Safe query streaming
 
@@ -82,4 +84,4 @@ Validation failures return 422, missing resources 404, unavailable framework ada
 
 ## Current boundary
 
-Pagination, authentication, distributed job leases, and deletion with coordinated multi-store cleanup are deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.
+Pagination, authentication, and deletion with coordinated multi-store cleanup remain deliberately deferred. The current SSE contract streams lifecycle state and a validated terminal answer rather than unsafe raw model tokens.

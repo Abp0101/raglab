@@ -1,6 +1,6 @@
 import asyncio
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
@@ -9,6 +9,7 @@ from raglab.core.exceptions import DocumentValidationError, IngestionJobNotFound
 from raglab.core.schemas import (
     DocumentInput,
     IngestionJob,
+    IngestionJobClaim,
     IngestionJobError,
     IngestionJobStatus,
     IngestionResult,
@@ -24,7 +25,9 @@ class MemoryJobRepository:
     def __init__(self) -> None:
         self.documents: dict[UUID, DocumentInput] = {}
         self.jobs: dict[UUID, IngestionJob] = {}
-        self.recoverable: tuple[UUID, ...] = ()
+        self.owners: dict[UUID, UUID] = {}
+        self.renew_count = 0
+        self._lock = asyncio.Lock()
 
     async def create(self, document: DocumentInput) -> IngestionJob:
         now = datetime.now(UTC)
@@ -46,32 +49,120 @@ class MemoryJobRepository:
         except KeyError as error:
             raise IngestionJobNotFoundError from error
 
-    async def list_recoverable(self) -> Sequence[UUID]:
-        return self.recoverable
+    async def claim_next(
+        self,
+        owner_id: UUID,
+        lease_duration: timedelta,
+    ) -> IngestionJobClaim | None:
+        async with self._lock:
+            now = datetime.now(UTC)
+            eligible = [
+                job
+                for job in self.jobs.values()
+                if job.status is IngestionJobStatus.QUEUED
+                or (
+                    job.status is IngestionJobStatus.PROCESSING
+                    and (job.lease_expires_at is None or job.lease_expires_at <= now)
+                )
+            ]
+            if not eligible:
+                return None
+            job = min(eligible, key=lambda item: (item.created_at, item.job_id))
+            expires = now + lease_duration
+            claimed = job.model_copy(
+                update={
+                    "status": IngestionJobStatus.PROCESSING,
+                    "attempt_count": job.attempt_count + 1,
+                    "lease_expires_at": expires,
+                    "updated_at": now,
+                }
+            )
+            self.jobs[job.job_id] = claimed
+            self.owners[job.job_id] = owner_id
+            return IngestionJobClaim(
+                job_id=job.job_id,
+                document=self.documents[job.job_id],
+                attempt_count=claimed.attempt_count,
+                lease_expires_at=expires,
+            )
 
-    async def claim(self, job_id: UUID) -> DocumentInput | None:
-        job = self.jobs.get(job_id)
-        if job is None or job.status is not IngestionJobStatus.QUEUED:
-            return None
-        self.jobs[job_id] = job.model_copy(update={"status": IngestionJobStatus.PROCESSING})
-        return self.documents[job_id]
+    async def renew(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        lease_duration: timedelta,
+    ) -> bool:
+        async with self._lock:
+            if not self._owns_live_lease(job_id, owner_id):
+                return False
+            self.renew_count += 1
+            now = datetime.now(UTC)
+            self.jobs[job_id] = self.jobs[job_id].model_copy(
+                update={"lease_expires_at": now + lease_duration, "updated_at": now}
+            )
+            return True
 
-    async def complete(self, job_id: UUID, result: IngestionResult) -> None:
+    async def complete(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        result: IngestionResult,
+    ) -> bool:
+        if not self._owns_live_lease(job_id, owner_id):
+            return False
         self.jobs[job_id] = self.jobs[job_id].model_copy(
-            update={"status": IngestionJobStatus.COMPLETED, "result": result}
+            update={
+                "status": IngestionJobStatus.COMPLETED,
+                "result": result,
+                "lease_expires_at": None,
+            }
         )
+        self.owners.pop(job_id, None)
+        return True
 
-    async def fail(self, job_id: UUID, error_type: str, message: str) -> None:
+    async def fail(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        error_type: str,
+        message: str,
+    ) -> bool:
+        if not self._owns_live_lease(job_id, owner_id):
+            return False
         self.jobs[job_id] = self.jobs[job_id].model_copy(
             update={
                 "status": IngestionJobStatus.FAILED,
                 "error": IngestionJobError(type=error_type, message=message),
+                "lease_expires_at": None,
             }
         )
+        self.owners.pop(job_id, None)
+        return True
 
-    async def requeue(self, job_id: UUID) -> None:
+    async def release(self, job_id: UUID, owner_id: UUID) -> bool:
+        if self.owners.get(job_id) != owner_id:
+            return False
         self.jobs[job_id] = self.jobs[job_id].model_copy(
-            update={"status": IngestionJobStatus.QUEUED}
+            update={
+                "status": IngestionJobStatus.QUEUED,
+                "lease_expires_at": None,
+            }
+        )
+        self.owners.pop(job_id, None)
+        return True
+
+    def expire(self, job_id: UUID) -> None:
+        self.jobs[job_id] = self.jobs[job_id].model_copy(
+            update={"lease_expires_at": datetime.now(UTC) - timedelta(seconds=1)}
+        )
+
+    def _owns_live_lease(self, job_id: UUID, owner_id: UUID) -> bool:
+        job = self.jobs[job_id]
+        return (
+            self.owners.get(job_id) == owner_id
+            and job.status is IngestionJobStatus.PROCESSING
+            and job.lease_expires_at is not None
+            and job.lease_expires_at > datetime.now(UTC)
         )
 
 
@@ -80,6 +171,8 @@ class StubPipeline:
         self.fail = fail
         self.block = block
         self.started = asyncio.Event()
+        self.finish = asyncio.Event()
+        self.calls = 0
 
     @property
     def config(self) -> PipelineConfig:
@@ -90,9 +183,10 @@ class StubPipeline:
         return PipelineCapabilities()
 
     async def ingest(self, documents: Sequence[DocumentInput]) -> Sequence[IngestionResult]:
+        self.calls += 1
         self.started.set()
         if self.block:
-            await asyncio.Event().wait()
+            await self.finish.wait()
         if self.fail:
             raise DocumentValidationError("invalid test PDF")
         document = documents[0]
@@ -121,47 +215,128 @@ def document() -> DocumentInput:
     )
 
 
+async def wait_for_status(
+    manager: BackgroundIngestionManager,
+    job_id: UUID,
+    status: IngestionJobStatus,
+) -> IngestionJob:
+    for _ in range(100):
+        job = await manager.get(job_id)
+        if job.status is status:
+            return job
+        await asyncio.sleep(0.001)
+    raise AssertionError(f"job did not reach {status}")
+
+
 @pytest.mark.asyncio
 async def test_background_manager_completes_persisted_job() -> None:
     repository = MemoryJobRepository()
-    manager = BackgroundIngestionManager(repository, StubPipeline())
+    manager = BackgroundIngestionManager(repository, StubPipeline(), poll_seconds=0.01)
 
     job = await manager.submit(document())
-    for _ in range(20):
-        if (await manager.get(job.job_id)).status is IngestionJobStatus.COMPLETED:
-            break
-        await asyncio.sleep(0)
+    completed = await wait_for_status(manager, job.job_id, IngestionJobStatus.COMPLETED)
 
-    completed = await manager.get(job.job_id)
-    assert completed.status is IngestionJobStatus.COMPLETED
     assert completed.result is not None
+    assert completed.attempt_count == 1
+    assert completed.lease_expires_at is None
     await manager.close()
 
 
 @pytest.mark.asyncio
 async def test_background_manager_retains_safe_expected_failure() -> None:
     repository = MemoryJobRepository()
-    manager = BackgroundIngestionManager(repository, StubPipeline(fail=True))
+    manager = BackgroundIngestionManager(
+        repository,
+        StubPipeline(fail=True),
+        poll_seconds=0.01,
+    )
 
     job = await manager.submit(document())
-    for _ in range(20):
-        if (await manager.get(job.job_id)).status is IngestionJobStatus.FAILED:
-            break
-        await asyncio.sleep(0)
+    failed = await wait_for_status(manager, job.job_id, IngestionJobStatus.FAILED)
 
-    failed = await manager.get(job.job_id)
-    assert failed.error == IngestionJobError(type="DocumentValidation", message="invalid test PDF")
+    assert failed.error == IngestionJobError(
+        type="DocumentValidation",
+        message="invalid test PDF",
+    )
     await manager.close()
 
 
 @pytest.mark.asyncio
-async def test_background_manager_requeues_interrupted_job() -> None:
+async def test_background_manager_releases_interrupted_job() -> None:
     repository = MemoryJobRepository()
     pipeline = StubPipeline(block=True)
-    manager = BackgroundIngestionManager(repository, pipeline)
+    manager = BackgroundIngestionManager(repository, pipeline, poll_seconds=0.01)
 
     job = await manager.submit(document())
     await pipeline.started.wait()
     await manager.close()
 
-    assert (await repository.get(job.job_id)).status is IngestionJobStatus.QUEUED
+    released = await repository.get(job.job_id)
+    assert released.status is IngestionJobStatus.QUEUED
+    assert released.lease_expires_at is None
+
+
+@pytest.mark.asyncio
+async def test_background_manager_renews_long_running_lease() -> None:
+    repository = MemoryJobRepository()
+    pipeline = StubPipeline(block=True)
+    manager = BackgroundIngestionManager(repository, pipeline, poll_seconds=0.01)
+    manager._heartbeat_seconds = 0.01
+
+    job = await manager.submit(document())
+    await pipeline.started.wait()
+    for _ in range(100):
+        if repository.renew_count:
+            break
+        await asyncio.sleep(0.002)
+    pipeline.finish.set()
+    await wait_for_status(manager, job.job_id, IngestionJobStatus.COMPLETED)
+
+    assert repository.renew_count >= 1
+    await manager.close()
+
+
+@pytest.mark.asyncio
+async def test_two_managers_process_one_job_only_once() -> None:
+    repository = MemoryJobRepository()
+    first_pipeline = StubPipeline()
+    second_pipeline = StubPipeline()
+    first = BackgroundIngestionManager(repository, first_pipeline, poll_seconds=0.01)
+    second = BackgroundIngestionManager(repository, second_pipeline, poll_seconds=0.01)
+    await second.start()
+
+    job = await first.submit(document())
+    await wait_for_status(first, job.job_id, IngestionJobStatus.COMPLETED)
+
+    assert first_pipeline.calls + second_pipeline.calls == 1
+    await first.close()
+    await second.close()
+
+
+@pytest.mark.asyncio
+async def test_expired_lease_is_reclaimed_and_stale_owner_cannot_finish() -> None:
+    repository = MemoryJobRepository()
+    job = await repository.create(document())
+    first_owner = uuid4()
+    second_owner = uuid4()
+    first = await repository.claim_next(first_owner, timedelta(seconds=30))
+    assert first is not None
+    repository.expire(job.job_id)
+
+    second = await repository.claim_next(second_owner, timedelta(seconds=30))
+
+    assert second is not None
+    assert second.job_id == job.job_id
+    assert second.attempt_count == 2
+    result = IngestionResult(
+        document_id=uuid4(),
+        collection_id=job.collection_id,
+        page_count=1,
+        chunk_count=1,
+        duration_ms=1,
+        parser="stub",
+        chunking_strategy="stub",
+        embedding_model="local",
+    )
+    assert await repository.complete(job.job_id, first_owner, result) is False
+    assert await repository.complete(job.job_id, second_owner, result) is True

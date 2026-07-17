@@ -1,6 +1,7 @@
 """Dependency-injection contracts for shared RAG services and adapters."""
 
 from collections.abc import Sequence
+from datetime import timedelta
 from typing import Protocol, runtime_checkable
 from uuid import UUID
 
@@ -18,6 +19,7 @@ from raglab.core.schemas import (
     GenerationRequest,
     GenerationResult,
     IngestionJob,
+    IngestionJobClaim,
     IngestionResult,
     ParsedDocument,
     PipelineCapabilities,
@@ -52,15 +54,35 @@ class IngestionJobRepository(Protocol):
 
     async def get(self, job_id: UUID) -> IngestionJob: ...
 
-    async def list_recoverable(self) -> Sequence[UUID]: ...
+    async def claim_next(
+        self,
+        owner_id: UUID,
+        lease_duration: timedelta,
+    ) -> IngestionJobClaim | None: ...
 
-    async def claim(self, job_id: UUID) -> DocumentInput | None: ...
+    async def renew(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        lease_duration: timedelta,
+    ) -> bool: ...
 
-    async def complete(self, job_id: UUID, result: IngestionResult) -> None: ...
+    async def complete(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        result: IngestionResult,
+    ) -> bool: ...
 
-    async def fail(self, job_id: UUID, error_type: str, message: str) -> None: ...
+    async def fail(
+        self,
+        job_id: UUID,
+        owner_id: UUID,
+        error_type: str,
+        message: str,
+    ) -> bool: ...
 
-    async def requeue(self, job_id: UUID) -> None: ...
+    async def release(self, job_id: UUID, owner_id: UUID) -> bool: ...
 
 
 @runtime_checkable

@@ -163,6 +163,8 @@ def build_api_services(settings: Settings) -> ApiServices:
             job_repository,
             custom,
             max_concurrency=settings.ingestion_concurrency,
+            lease_seconds=settings.ingestion_lease_seconds,
+            poll_seconds=settings.ingestion_poll_seconds,
         ),
         readiness_probe=readiness,
     )

@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     max_upload_size_mb: int = Field(default=25, ge=1, le=250)
     max_pdf_pages: int = Field(default=500, ge=1, le=5000)
     ingestion_concurrency: int = Field(default=1, ge=1, le=8)
+    ingestion_lease_seconds: float = Field(default=60, ge=3, le=3600)
+    ingestion_poll_seconds: float = Field(default=1, ge=0.05, le=60)
     embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
     embedding_batch_size: int = Field(default=32, ge=1, le=512)
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
