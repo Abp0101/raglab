@@ -7,6 +7,7 @@ import { PageIntro } from "@/components/page-intro";
 import { SignalRibbon } from "@/components/signal-ribbon";
 import { API_URL, apiFetch, DEMO_MODE, errorMessage, storedApiKey } from "@/lib/api";
 import { demoCollections, demoPipelines, demoResponse } from "@/lib/demo-data";
+import { evidenceSignalFor, relativeScorePercent } from "@/lib/evidence-score";
 import { formatLatency, formatNumber, shortId, titleCase } from "@/lib/format";
 import { drainSseBuffer } from "@/lib/sse";
 import type { Collection, CursorPage, Framework, PipelineSummary, QueryPayload, RAGResponse, RetrievalMode } from "@/types/api";
@@ -55,7 +56,7 @@ export default function QueryPage() {
   }, []);
 
   const selected = response.retrieved_chunks[selectedChunk] ?? response.retrieved_chunks[0];
-  const evidenceScore = selected?.reranker_score ?? selected?.relevance_score ?? 0;
+  const evidenceSignal = evidenceSignalFor(selected);
   const availableFrameworks = useMemo(() => new Set(pipelines.filter((item) => item.available).map((item) => item.framework)), [pipelines]);
 
   const runPreview = async () => {
@@ -204,7 +205,7 @@ export default function QueryPage() {
               <button type="button" className="evidence-item" data-active={selectedChunk === index || undefined} key={item.chunk.chunk_id} onClick={() => setSelectedChunk(index)} aria-pressed={selectedChunk === index}>
                 <span className="rank">{String(item.rank).padStart(2, "0")}</span>
                 <div className="evidence-item-copy"><strong>{item.chunk.metadata.display_title}</strong><span>p. {item.chunk.metadata.page_number ?? "—"} / {item.chunk.metadata.section_heading ?? "unsectioned"}</span><p>{item.chunk.text}</p></div>
-                <div className="score-gauge"><i style={{ height: `${Math.max(3, (item.reranker_score ?? item.relevance_score ?? 0) * 100)}%` }} /><span>{formatNumber(item.reranker_score ?? item.relevance_score, 3)}</span></div>
+                <div className="score-gauge"><i style={{ height: `${relativeScorePercent(item, response.retrieved_chunks)}%` }} /><span>{formatNumber(item.reranker_score ?? item.relevance_score, 3)}</span></div>
               </button>
             ))}
           </div>
@@ -215,7 +216,10 @@ export default function QueryPage() {
               <div className="provenance"><span>CHUNK {shortId(selected.chunk.chunk_id)}</span><span>{selected.chunk.token_count ?? "—"} TOKENS</span></div>
             </div>
           )}
-          <div className="evidence-score"><span>Selected evidence signal</span><strong>{Math.round(evidenceScore * 100)}<small>%</small></strong></div>
+          <div className="evidence-score" aria-label="Selected evidence score">
+            <span>{evidenceSignal.label}</span>
+            <strong>{formatNumber(evidenceSignal.value, evidenceSignal.digits)}</strong>
+          </div>
         </aside>
       </form>
     </div>

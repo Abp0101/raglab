@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import QueryPage from "@/app/query/page";
@@ -15,5 +15,9 @@ describe("Evidence workbench", () => {
     expect(screen.getByRole("button", { name: "Select Langgraph framework" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("region", { name: "Grounded response" })).toBeInTheDocument();
     expect(screen.getByRole("complementary", { name: "Retrieved evidence" })).toBeInTheDocument();
+    const selectedScore = screen.getByLabelText("Selected evidence score");
+    expect(within(selectedScore).getByText("Selected reranker raw score")).toBeInTheDocument();
+    expect(selectedScore).toHaveTextContent("0.880");
+    expect(selectedScore).not.toHaveTextContent("%");
   });
 });
